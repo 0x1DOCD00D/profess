@@ -6,8 +6,8 @@
 **P**rogramming **R**ule **O**riented **F**ormalized **E**nglish **S**entence **S**pecifications
 
 > A Scala 3 framework for building domain-specific languages with English-like syntax and formal semantic foundations.
-
 ---
+### **Author:** [Dr. Mark Grechanik](http://www.cs.uic.edu/~drmark/) • 📧 [Email 0x1DOCD00D](mailto:0x1DOCD00D@drmark.tech)
 
 ## Table of Contents
 
@@ -36,6 +36,302 @@
 - 📐 **Formal Foundations** — Operational and denotational semantics with proven properties
 - ⚡ **Algebraic Optimizations** — Provably correct transformations from monoid laws
 - 🔧 **Minimal Learning Curve** — Domain experts can write specifications without learning Scala
+
+---
+
+## 🧩 What Problems Does PROFESS Solve?
+
+### The Challenge
+
+Imagine you want to write this in your Scala program:
+
+```scala
+val trade = (broker Mark) sold 700 shares (stock MSFT) at 150 dollars
+```
+
+In standard Scala, this would fail immediately. The compiler would complain:
+- `broker` is not defined
+- `Mark` is not defined
+- `sold` is not a method
+- `shares` is not defined
+- ... and so on for every word
+
+You would need to declare dozens of variables, methods, classes, and implicits just to make this compile. And if you wanted to change "sold" to "purchased" or add "on exchange NYSE", you'd need even more boilerplate.
+
+### The PROFESS Solution
+
+PROFESS lets you write **arbitrary English sentences as valid Scala code** with:
+
+| Feature | Benefit |
+|---------|---------|
+| **No declarations needed** | Write `broker`, `Mark`, `sold` without defining them first |
+| **Natural word order** | Sentences flow like English, not like code |
+| **Deferred semantics** | Define what words *mean* separately from how they *look* |
+| **Compile-time safety** | Syntax errors caught during compilation |
+| **First-class values** | Sentences are values you can pass, store, and compose |
+
+### How It Works
+
+When you write:
+
+```scala
+val order = (broker Jane) bought 500 (stock AAPL)
+```
+
+PROFESS automatically:
+
+1. **Recognizes patterns** — `(broker Jane)` is a PROFESS object with kind `broker` and name `Jane`
+2. **Generates scaffolding** — Creates the necessary `broker`, `Jane`, `bought`, `stock`, `AAPL` identifiers
+3. **Builds an IR graph** — Constructs a computation graph representing the sentence structure
+4. **Enables interpretation** — Lets you define what `bought` means in *your* domain
+
+The result is a `ProfessExpr` containing:
+
+```
+IRSequence([
+  IRObject("broker", "Jane"),
+  IRWord("bought"),
+  IRNumber(500),
+  IRObject("stock", "AAPL")
+])
+```
+
+### Deferred Semantics: Define Meaning Later
+
+The key innovation is **separation of syntax from semantics**. You write sentences first, then define their meaning:
+
+```scala
+// Write the sentence (syntax)
+val order = (broker Jane) bought 500 (stock AAPL)
+
+// Later, define what "bought" means (semantics)
+val handlers = HandlerDSL.handlers[IO, Trade]
+  .onWord("bought") { (args, _) =>
+    val qty = args.collectFirst { case IRNumber(n) => n.toInt }.getOrElse(0)
+    IO.pure(Trade(action = "buy", quantity = qty))
+  }
+  .onObject("broker") { (name, _) => IO.pure(Trade(broker = name)) }
+  .onObject("stock") { (name, _) => IO.pure(Trade(symbol = name)) }
+  .build
+
+// Execute with your semantics
+val result: IO[Trade] = runWithHandlers(order)
+```
+
+This means:
+- **Domain experts** write specifications in natural language
+- **Developers** implement the interpretation logic separately
+- **The same sentence** can have different meanings in different contexts
+
+### Why This Matters
+
+| Traditional DSL | PROFESS |
+|-----------------|---------|
+| Define all keywords upfront | Use any words you want |
+| Rigid syntax rules | Flexible English-like flow |
+| Syntax and semantics coupled | Syntax and semantics separated |
+| Hard to extend | Add new words anytime |
+| Requires Scala expertise | Domain experts can contribute |
+
+---
+
+## 🔄 PROFESS and Futamura Projections
+
+### Computation as a Graph
+
+A PROFESS expression is not just text — it's a **graph of computation**:
+
+- **Nodes** are instances of PROFESS types (`IRObject`, `IRWord`, `IRNumber`, etc.)
+- **Edges** are method calls that return values of these types
+
+```
+(broker Mark) sold 700 (stock MSFT)
+       │        │   │       │
+       ▼        │   │       ▼
+  IRObject ─────┼───┼── IRObject
+  (broker,      │   │   (stock,
+   "Mark")      │   │    "MSFT")
+                ▼   ▼
+            IRWord  IRNumber
+            (sold)  (700)
+                │
+                ▼
+          IRSequence([...])
+```
+
+This graph structure enables powerful transformations through **partial evaluation** and **Futamura projections**.
+
+### Partial Evaluation
+
+**Partial evaluation** specializes a program with respect to part of its input. When applied to a DSL interpreter, it produces a residual program in an intermediate representation (IR) that no longer requires interpretation of the original DSL code.
+
+Given:
+- `I` — an interpreter for the DSL
+- `P` — a DSL program
+- `PE` — a partial evaluator
+
+Then: `IR_P = PE(I, P)` — the partial evaluator specializes the interpreter with respect to `P`, generating a residual program `IR_P`.
+
+### First Futamura Projection: Specializing Programs
+
+The **first Futamura projection** specializes an interpreter for a specific DSL program, effectively compiling it into optimized code.
+
+```scala
+// DSL for arithmetic expressions
+sealed trait Expr
+case class Const(value: Int) extends Expr
+case class Var(name: String) extends Expr
+case class Add(left: Expr, right: Expr) extends Expr
+
+// Interpreter
+def interpret(expr: Expr, env: Map[String, Int]): Int = expr match {
+  case Const(v)  => v
+  case Var(n)    => env.getOrElse(n, 0)
+  case Add(l, r) => interpret(l, env) + interpret(r, env)
+}
+
+// Partial evaluator (first Futamura projection)
+def partialEval(expr: Expr): Map[String, Int] => Int = {
+  (env: Map[String, Int]) => interpret(expr, env)
+}
+
+// Specialize for a specific program: Add(Var("x"), Const(3))
+val specialized = partialEval(Add(Var("x"), Const(3)))
+// specialized is now equivalent to: (env) => env("x") + 3
+
+specialized(Map("x" -> 2))  // Returns 5
+```
+
+The result `specialized` is a function `x + 3` with the interpretation overhead eliminated.
+
+### Second Futamura Projection: Generating Compilers
+
+The **second Futamura projection** takes specialization further — it specializes the partial evaluator with respect to the interpreter itself, producing a **compiler** for the DSL:
+
+```scala
+// Partial evaluator that takes an interpreter as input
+def partialEval(interpret: (Expr, Map[String, Int]) => Int): 
+    Expr => (Map[String, Int] => Int) = {
+  (expr: Expr) => (env: Map[String, Int]) => interpret(expr, env)
+}
+
+// Generate a compiler by fixing the interpreter
+val compiler = partialEval(interpret)
+
+// Use the compiler on any program
+val compiled = compiler(Add(Var("x"), Const(3)))
+compiled(Map("x" -> 4))  // Returns 7
+```
+
+The `compiler` can now take **any** DSL program and compile it to efficient host language code.
+
+### Third Futamura Projection: Compiler Generators
+
+The **third Futamura projection** specializes the partial evaluator to itself, yielding a **compiler generator** — a reusable function that can generate compilers for many different DSL interpreters:
+
+```scala
+// Multiple intermediate representations
+sealed trait SuperIR
+
+sealed trait IRExpr1 extends SuperIR
+case class IRConst1(value: Int) extends IRExpr1
+case class IRVar1(name: String) extends IRExpr1
+case class IRAdd1(left: IRExpr1, right: IRExpr1) extends IRExpr1
+
+sealed trait IRExpr2 extends SuperIR
+case class IRNumber(value: Int) extends IRExpr2
+case class IRNamed(name: String) extends IRExpr2
+case class IRSum(left: IRExpr2, right: IRExpr2) extends IRExpr2
+
+// Translators to each IR
+def toIR1(expr: Expr): IRExpr1 = expr match {
+  case Const(v)  => IRConst1(v)
+  case Var(n)    => IRVar1(n)
+  case Add(l, r) => IRAdd1(toIR1(l), toIR1(r))
+}
+
+def toIR2(expr: Expr): IRExpr2 = expr match {
+  case Const(v)  => IRNumber(v)
+  case Var(n)    => IRNamed(n)
+  case Add(l, r) => IRSum(toIR2(l), toIR2(r))
+}
+
+// Evaluators for each IR (with different semantics!)
+def evalIR1(ir: IRExpr1, env: Map[String, Int]): Int = ir match {
+  case IRConst1(v)  => v
+  case IRVar1(name) => env.getOrElse(name, 0)
+  case IRAdd1(l, r) => evalIR1(l, env) + evalIR1(r, env)
+}
+
+def evalIR2(ir: IRExpr2, env: Map[String, Int]): Int = ir match {
+  case IRNumber(v)  => v + 1  // Different semantics!
+  case IRNamed(name)=> env.getOrElse(name, 1)
+  case IRSum(l, r)  => evalIR2(l, env) * evalIR2(r, env)  // Multiplication!
+}
+
+// Compiler generator (third Futamura projection)
+def compilerGenerator[I <: SuperIR](
+    toIR: Expr => I,
+    eval: (I, Map[String, Int]) => Int
+): Expr => Map[String, Int] => Int = {
+  (expr: Expr) => (env: Map[String, Int]) => eval(toIR(expr), env)
+}
+
+// Generate different compilers from the same generator
+val compiler1 = compilerGenerator(toIR1, evalIR1)
+val compiler2 = compilerGenerator(toIR2, evalIR2)
+
+val program = Add(Var("x"), Const(3))
+
+compiler1(program)(Map("x" -> 5))  // Standard: 5 + 3 = 8
+compiler2(program)(Map("x" -> 5))  // Different: (5+1) * (3+1) = 24
+```
+
+### How PROFESS Uses Futamura Projections
+
+PROFESS leverages the third Futamura projection to achieve powerful flexibility:
+
+| Projection | PROFESS Application |
+|------------|---------------------|
+| **1st** | Specialize a handler registry for a specific PROFESS expression |
+| **2nd** | Generate domain-specific compilers from handler definitions |
+| **3rd** | Create compiler generators that target multiple backends |
+
+This enables:
+
+1. **Multiple IRs** — The same PROFESS sentence can compile to different intermediate representations (monolithic app, distributed system, actor model, etc.)
+
+2. **Pluggable Backends** — Swap interpreter-evaluator pairs to target Akka, Spark, or custom runtimes
+
+3. **Composable Compilation** — Combine partial evaluators to build sophisticated compilation pipelines
+
+```scala
+// Same PROFESS syntax, different compilation targets
+val trade = (broker Mark) sold 700 (stock MSFT)
+
+// Compile to local execution
+val localCompiler = compilerGenerator(toLocalIR, evalLocal)
+val localResult = localCompiler(trade)(context)
+
+// Compile to distributed Akka actors  
+val akkaCompiler = compilerGenerator(toAkkaIR, evalAkka)
+val akkaResult = akkaCompiler(trade)(context)
+
+// Compile to Spark jobs
+val sparkCompiler = compilerGenerator(toSparkIR, evalSpark)
+val sparkResult = sparkCompiler(trade)(context)
+```
+
+### Summary
+
+| Concept | Description |
+|---------|-------------|
+| **PROFESS Expression** | A computation graph with typed nodes and method edges |
+| **Partial Evaluation** | Specializing interpreters to eliminate runtime overhead |
+| **1st Projection** | Expression → Specialized Program |
+| **2nd Projection** | Interpreter → Compiler |
+| **3rd Projection** | Partial Evaluator → Compiler Generator |
+| **PROFESS Benefit** | Same syntax compiles to multiple targets via pluggable IR/evaluator pairs |
 
 ---
 
@@ -700,6 +996,16 @@ Contributions welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md).
 5. Open a Pull Request
 
 ---
+## 📬 Contact
+
+- **Author:** [Dr. Mark Grechanik](http://www.cs.uic.edu/~drmark/)
+- **Email:** [0x1DOCD00D](mailto:0x1DOCD00D@drmark.tech)
+- **Issues:** [GitHub Issues](https://github.com/0x1DOCD00D/profess/issues)
+- **Discussions:** [GitHub Discussions](https://github.com/0x1DOCD00D/profess/discussions)
+---
+## 🙏 Acknowledgments
+
+- **Author & Lead Developer:** [Prof. Mark Grechanik](http://www.cs.uic.edu/~drmark/) — University of Illinois, Chicago and Lone Star Consulting, Inc.
 
 ## 📄 License
 
