@@ -1,0 +1,36 @@
+version = "3.7.17"
+runner.dialect = scala3
+
+maxColumn = 100
+indent.main = 2
+indent.callSite = 2
+
+align.preset = more
+align.tokens."+" = [
+  { code = "=>", owner = "Case" }
+  { code = "=", owner = "(Enumerator.Val|Defn.(Va(l|r)|Def|Type))" }
+  { code = "<-", owner = "Enumerator.Generator" }
+  { code = "->", owner = "Term.ApplyInfix" }
+]
+
+rewrite.rules = [
+  RedundantBraces
+  RedundantParens
+  SortModifiers
+  PreferCurlyFors
+]
+
+rewrite.scala3.convertToNewSyntax = true
+rewrite.scala3.removeOptionalBraces = yes
+
+newlines.topLevelStatementBlankLines = [
+  { blanks { before = 1 } }
+]
+
+docstrings.style = Asterisk
+docstrings.wrap = "no"
+docstrings.blankFirstLine = yes
+
+spaces.inImportCurlyBraces = true
+
+project.git = true
