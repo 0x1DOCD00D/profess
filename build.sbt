@@ -111,7 +111,25 @@ lazy val commonSettings = Seq(
     "-language:higherKinds",
     "-language:implicitConversions"
   ),
-  // Test settings
+  libraryDependencies ++= Seq(
+    commonId,
+    logbackCore,
+    logbackClassic,
+    sfl4jApt,
+    catsCore,
+    catsEffect,
+    catsLaws,
+    catsEffects,
+    scalactic,
+    scalatest,
+    pureConfig,
+    pureConfGeneric,
+    catsEffectsTest,
+    log4CatsCore,
+    log4CatsSfl,
+    log4CatsTest
+  ),
+    // Test settings
   Test / parallelExecution := false,
   Test / fork := true,
   testFrameworks += new TestFramework("munit.Framework")
@@ -144,12 +162,7 @@ lazy val runtime = project
   .in(file("runtime"))
   .settings(commonSettings)
   .settings(
-    name := "profess-runtime",
-    libraryDependencies ++= Seq(
-      // Core dependencies
-      catsCore,
-      catsEffect,
-    )
+    name := "profess-runtime"
   )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -165,24 +178,6 @@ lazy val examples = project
     name := "profess-examples",
     // Don't publish examples
     publish / skip := true,
-    libraryDependencies ++= Seq(
-      commonId,
-      logbackCore,
-      logbackClassic,
-      sfl4jApt,
-      catsCore,
-      catsEffect,
-      catsLaws,
-      catsEffects,
-      scalactic,
-      scalatest,
-      pureConfig,
-      pureConfGeneric,
-      catsEffectsTest,
-      log4CatsCore,
-      log4CatsSfl,
-      log4CatsTest
-    ),
     // Enable the PROFESS compiler plugin
     scalacOptions ++= Seq(
       s"-Xplugin:${(plugin / Compile / packageBin).value.getAbsolutePath}"
