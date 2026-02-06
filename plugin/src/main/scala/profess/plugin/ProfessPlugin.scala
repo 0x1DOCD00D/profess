@@ -59,6 +59,9 @@ class ProfessPhase extends PluginPhase:
   override val runsBefore: Set[String] = Set("typer")
 
   override def prepareForUnit(tree: tpd.Tree)(using Context): Context =
+    report.echo(
+      s"[PROFESS] plugin phase ran for ${ctx.compilationUnit.source.file.name}"
+    )
     val unit = ctx.compilationUnit
     val untypedTree = unit.untpdTree
 

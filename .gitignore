@@ -75,6 +75,7 @@ project/project/
 .bloop/
 metals.sbt
 .scala-build/
+.scalafmt.conf
 
 # ─────────────────────────────────────────────────────────────────────────────
 # OS Files

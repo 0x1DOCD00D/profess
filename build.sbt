@@ -71,7 +71,6 @@ val log4CatsCore = "org.typelevel" %% "log4cats-core" % log4catsVersion
 val log4CatsSfl = "org.typelevel" %% "log4cats-slf4j" % log4catsVersion
 val log4CatsTest = "org.typelevel" %% "log4cats-testing" % log4catsTestingVersion % Test
 
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Global Settings
 // ─────────────────────────────────────────────────────────────────────────────
@@ -179,11 +178,10 @@ lazy val examples = project
     // Don't publish examples
     publish / skip := true,
     // Enable the PROFESS compiler plugin
-    scalacOptions ++= Seq(
-      s"-Xplugin:${(plugin / Compile / packageBin).value.getAbsolutePath}"
-    ),
-    // Ensure plugin is compiled before examples
-    Compile / compile := ((Compile / compile) dependsOn (plugin / Compile / packageBin)).value
+    addCompilerPlugin("com.profess" %% "profess-plugin" % "0.1.0-SNAPSHOT"),
+      Compile / compile :=(Compile / compile)
+        .dependsOn(plugin / publishLocal)
+        .value
   )
 
 // ─────────────────────────────────────────────────────────────────────────────
