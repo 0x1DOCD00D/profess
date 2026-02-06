@@ -27,13 +27,21 @@ This ruleset protects the `master` branch with the following rules:
    - Force pushes are not allowed
 
 5. **Linear History Required**
-   - Merge commits and squash merges are required to maintain linear history
+   - Only fast-forward or rebase merges are allowed to maintain linear history
+   - This prevents merge commits from being created
 
 ### Applying These Rules
 
-GitHub will automatically apply these rulesets when you push this configuration to the repository. The rulesets are stored in the `.github/rulesets/` directory and are enforced by GitHub.
+This JSON file serves as a configuration template for the branch protection rules. To apply these rules to the repository, you need to create a ruleset using one of the following methods:
 
-To manually apply or view these rules in the GitHub UI:
+**Option 1: Using the GitHub UI**
 1. Go to repository Settings
 2. Navigate to Rules → Rulesets
-3. The "Master Branch Protection" ruleset should be visible and active
+3. Click "New ruleset" → "New branch ruleset"
+4. Use the settings from `master-branch-protection.json` to configure the ruleset
+5. Set enforcement to "Active"
+
+**Option 2: Using the GitHub API**
+Use the GitHub REST API to create a ruleset by sending a POST request to `/repos/{owner}/{repo}/rulesets` with the contents of this JSON file.
+
+**Note:** The JSON files in this directory do not automatically activate protection rules. They serve as documentation and configuration templates that need to be manually applied through the GitHub UI or API.
