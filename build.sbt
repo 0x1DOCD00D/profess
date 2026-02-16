@@ -64,12 +64,16 @@ val catsLaws = "org.typelevel" %% "cats-laws" % catsVersion % Test
 val catsEffects = "org.typelevel" %% "cats-effect" % catsEffectVersion
 val scalactic = "org.scalactic" %% "scalactic" % scalacticVersion
 val scalatest = "org.scalatest" %% "scalatest" % scalacticVersion % Test
-val pureConfig = "com.github.pureconfig" %% "pureconfig-core" % pureConfigVersion
-val pureConfGeneric = "com.github.pureconfig" %% "pureconfig-generic-scala3" % pureConfigVersion
-val catsEffectsTest = "org.typelevel" %% "cats-effect-testing-scalatest" % catsEffectsTestingVersion
+val pureConfig =
+  "com.github.pureconfig" %% "pureconfig-core" % pureConfigVersion
+val pureConfGeneric =
+  "com.github.pureconfig" %% "pureconfig-generic-scala3" % pureConfigVersion
+val catsEffectsTest =
+  "org.typelevel" %% "cats-effect-testing-scalatest" % catsEffectsTestingVersion
 val log4CatsCore = "org.typelevel" %% "log4cats-core" % log4catsVersion
 val log4CatsSfl = "org.typelevel" %% "log4cats-slf4j" % log4catsVersion
-val log4CatsTest = "org.typelevel" %% "log4cats-testing" % log4catsTestingVersion % Test
+val log4CatsTest =
+  "org.typelevel" %% "log4cats-testing" % log4catsTestingVersion % Test
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Global Settings
@@ -81,7 +85,9 @@ ThisBuild / scalaVersion := scala3Version
 
 // Publishing metadata
 ThisBuild / homepage := Some(url("https://github.com/0x1DOCD00D/profess"))
-ThisBuild / licenses := List("Apache-2.0" -> url("https://www.apache.org/licenses/LICENSE-2.0"))
+ThisBuild / licenses := List(
+  "Apache-2.0" -> url("https://www.apache.org/licenses/LICENSE-2.0")
+)
 ThisBuild / developers := List(
   Developer(
     id = "0x1DOCD00D",
@@ -128,7 +134,7 @@ lazy val commonSettings = Seq(
     log4CatsSfl,
     log4CatsTest
   ),
-    // Test settings
+  // Test settings
   Test / parallelExecution := false,
   Test / fork := true,
   testFrameworks += new TestFramework("munit.Framework")
@@ -179,9 +185,11 @@ lazy val examples = project
     publish / skip := true,
     // Enable the PROFESS compiler plugin
     addCompilerPlugin("com.profess" %% "profess-plugin" % "0.1.0-SNAPSHOT"),
-      Compile / compile :=(Compile / compile)
-        .dependsOn(plugin / publishLocal)
-        .value
+    // Uncomment to see debug output (per-unit phase echo) or comment to remove debug flag:
+    scalacOptions += "-P:profess:debug",
+    Compile / compile := (Compile / compile)
+      .dependsOn(plugin / publishLocal)
+      .value
   )
 
 // ─────────────────────────────────────────────────────────────────────────────

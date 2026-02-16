@@ -19,118 +19,108 @@ import dotty.tools.dotc.report
 import scala.annotation.nowarn
 import scala.collection.mutable
 
-/**
- * PROFESS COMPILER PLUGIN
- *
- * Programming Rule Oriented Formalized English Sentence Specifications
- *
- * KEY FEATURES:
- *   - Expressions evaluate to first-class values (ProfessExpr)
- *   - Scope-aware: only scaffolds identifiers NOT declared in scope
- *   - Conservative: when in doubt, leaves to Scala compiler
- *
- * SCOPE CHECKING:
- *   - Collects all declared identifiers (val, var, def, class, object, params, imports)
- *   - Only generates scaffolding for identifiers that are:
- *     1. Not Scala keywords
- *     2. Not declared anywhere in the current scope
- *     3. Appear in PROFESS expression patterns
- */
+/** PROFESS COMPILER PLUGIN
+  *
+  * Programming Rule Oriented Formalized English Sentence Specifications
+  *
+  * KEY FEATURES:
+  *   - Expressions evaluate to first-class values (ProfessExpr)
+  *   - Scope-aware: only scaffolds identifiers NOT declared in scope
+  *   - Conservative: when in doubt, leaves to Scala compiler
+  *
+  * SCOPE CHECKING:
+  *   - Collects all declared identifiers (val, var, def, class, object, params,
+  *     imports)
+  *   - Only generates scaffolding for identifiers that are:
+  *     1. Not Scala keywords
+  *     2. Not declared anywhere in the current scope
+  *     3. Appear in PROFESS expression patterns
+  */
 
 class ProfessPlugin extends StandardPlugin:
   val name: String = "profess"
-  override val description: String = "PROFESS - Programming Rule Oriented Formalized English Sentence Specifications"
+  override val description: String =
+    "PROFESS - Programming Rule Oriented Formalized English Sentence Specifications"
+
+  override val optionsHelp: Option[String] = Some(
+    """  -P:profess:debug      Enable debug output (per-unit phase echo)
+      |  -P:profess:dump-ast   (reserved) Dump transformed AST to console""".stripMargin
+  )
 
   @nowarn("msg=deprecated")
   override def init(options: List[String]): List[PluginPhase] =
-    List(new ProfessPhase)
-
-
-/**
- * PROFESS Transform Phase
- *
- * Runs after parser, before typer.
- */
-class ProfessPhase extends PluginPhase:
-
-  val phaseName: String = "profess"
-
-  override val runsAfter: Set[String] = Set("parser")
-  override val runsBefore: Set[String] = Set("typer")
-
-  override def prepareForUnit(tree: tpd.Tree)(using Context): Context =
-    report.echo(
-      s"[PROFESS] plugin phase ran for ${ctx.compilationUnit.source.file.name}"
-    )
-    val unit = ctx.compilationUnit
-    val untypedTree = unit.untpdTree
-
-    if untypedTree != null then
-      // 1. Collect ALL declared identifiers in the compilation unit
-      val declCollector = DeclarationCollector()
-      declCollector.traverse(untypedTree)
-      val declared = declCollector.result
-
-      // 2. Collect candidate identifiers from PROFESS expressions
-      val exprCollector = ExpressionCollector(declared)
-      exprCollector.traverse(untypedTree)
-      val candidates = exprCollector.result
-
-      if candidates.nonEmpty then
-        // 3. Filter to only truly undeclared identifiers
-        val toScaffold = candidates.filter { case (id, _) =>
-          !declared.contains(id) && !isScalaKeyword(id)
-        }
-
-        if toScaffold.nonEmpty then
-          val kinds = toScaffold.filter(_._2 == IdKind.Kind).keys.toList.sorted
-          val names = toScaffold.filter(_._2 == IdKind.Name).keys.toList.sorted
-          val words = toScaffold.filter(_._2 == IdKind.Word).keys.toList.sorted
-
-          report.inform(s"[PROFESS] Processing: ${ctx.source.name}")
-          if kinds.nonEmpty then
-            report.inform(s"[PROFESS]   Kinds: ${kinds.mkString(", ")}")
-          if names.nonEmpty then
-            report.inform(s"[PROFESS]   Names: ${names.mkString(", ")}")
-          if words.nonEmpty then
-            report.inform(s"[PROFESS]   Words: ${words.mkString(", ")}")
-
-          // 4. Generate scaffolding
-          val scaffolding = ScaffoldGenerator.generate(toScaffold)
-
-          // 5. Inject into AST
-          val transformed = ASTInjector.inject(untypedTree, scaffolding, declared)
-
-          unit.untpdTree = transformed
-
-    ctx
-
-  private def isScalaKeyword(name: String): Boolean =
-    scalaKeywords.contains(name)
-
-  private val scalaKeywords = Set(
-    "abstract", "case", "catch", "class", "def", "do", "else", "extends",
-    "false", "final", "finally", "for", "forSome", "if", "implicit",
-    "import", "lazy", "match", "new", "null", "object", "override",
-    "package", "private", "protected", "return", "sealed", "super",
-    "this", "throw", "trait", "true", "try", "type", "val", "var",
-    "while", "with", "yield", "given", "using", "then", "enum", "export",
-    "end", "infix", "inline", "opaque", "open", "transparent", "derives"
-  )
-
+    val debug = options.contains("debug")
+    List(new ProfessPhase(debug))
 
 /** Identifier classification */
 enum IdKind:
-  case Kind   // lowercase in (kindId name) position
-  case Name   // in name position of (kindId name)
-  case Word   // standalone word
+  case Kind // lowercase in (kindId name) position
+  case Name // in name position of (kindId name)
+  case Word // standalone word
 
+/** Shared set of Scala 3 keywords. Used by the phase and expression collector
+  * to avoid scaffolding keywords.
+  */
+object ScalaKeywords:
+  def contains(name: String): Boolean = set.contains(name)
+  private val set = Set(
+    "abstract",
+    "case",
+    "catch",
+    "class",
+    "def",
+    "do",
+    "else",
+    "extends",
+    "false",
+    "final",
+    "finally",
+    "for",
+    "forSome",
+    "if",
+    "implicit",
+    "import",
+    "lazy",
+    "match",
+    "new",
+    "null",
+    "object",
+    "override",
+    "package",
+    "private",
+    "protected",
+    "return",
+    "sealed",
+    "super",
+    "this",
+    "throw",
+    "trait",
+    "true",
+    "try",
+    "type",
+    "val",
+    "var",
+    "while",
+    "with",
+    "yield",
+    "given",
+    "using",
+    "then",
+    "enum",
+    "export",
+    "end",
+    "infix",
+    "inline",
+    "opaque",
+    "open",
+    "transparent",
+    "derives"
+  )
 
-/**
- * Collects ALL declared identifiers in the compilation unit.
- *
- * This is used to determine what should NOT be scaffolded.
- */
+/** Collects ALL declared identifiers in the compilation unit.
+  *
+  * This is used to determine what should NOT be scaffolded.
+  */
 class DeclarationCollector(using Context) extends UntypedTreeTraverser:
 
   private val declared = mutable.Set[String]()
@@ -149,7 +139,7 @@ class DeclarationCollector(using Context) extends UntypedTreeTraverser:
         declared += name.toString
         paramss.foreach { params =>
           params.foreach {
-            case vd: ValDef => declared += vd.name.toString
+            case vd: ValDef  => declared += vd.name.toString
             case td: TypeDef => declared += td.name.toString
           }
         }
@@ -175,7 +165,7 @@ class DeclarationCollector(using Context) extends UntypedTreeTraverser:
             case untpd.ImportSelector(_, renamed, _) if renamed != EmptyTree =>
               renamed match
                 case Ident(rname) => declared += rname.toString
-                case _ => ()
+                case _            => ()
             case _ => ()
         }
         traverseChildren(tree)
@@ -203,13 +193,12 @@ class DeclarationCollector(using Context) extends UntypedTreeTraverser:
       elems.foreach(collectPatternNames)
     case _ => ()
 
-
-/**
- * Collects candidate identifiers from PROFESS expressions.
- *
- * Only collects identifiers that might need scaffolding.
- */
-class ExpressionCollector(declared: Set[String])(using Context) extends UntypedTreeTraverser:
+/** Collects candidate identifiers from PROFESS expressions.
+  *
+  * Only collects identifiers that might need scaffolding.
+  */
+class ExpressionCollector(declared: Set[String])(using Context)
+    extends UntypedTreeTraverser:
 
   private val candidates = mutable.Map[String, IdKind]()
 
@@ -225,7 +214,7 @@ class ExpressionCollector(declared: Set[String])(using Context) extends UntypedT
       case dd @ DefDef(_, paramss, tpt, _) =>
         paramss.foreach { params =>
           params.foreach {
-            case vd: ValDef => traverse(vd.tpt)
+            case vd: ValDef  => traverse(vd.tpt)
             case td: TypeDef => traverse(td.rhs)
           }
         }
@@ -235,14 +224,14 @@ class ExpressionCollector(declared: Set[String])(using Context) extends UntypedT
       // PROFESS object pattern: (kindId name)
       // Parses as: Apply(Ident(kindId), List(Ident(name)))
       case Apply(Ident(kindId), List(Ident(name)))
-        if isKindCandidate(kindId.toString) =>
+          if isKindCandidate(kindId.toString) =>
         val kindStr = kindId.toString
         val nameStr = name.toString
 
         // Only add if not declared
-        if !declared.contains(kindStr) && !isScalaKeyword(kindStr) then
+        if !declared.contains(kindStr) && !ScalaKeywords.contains(kindStr) then
           candidates.getOrElseUpdate(kindStr, IdKind.Kind)
-        if !declared.contains(nameStr) && !isScalaKeyword(nameStr) then
+        if !declared.contains(nameStr) && !ScalaKeywords.contains(nameStr) then
           candidates.getOrElseUpdate(nameStr, IdKind.Name)
 
         traverseChildren(tree)
@@ -251,10 +240,10 @@ class ExpressionCollector(declared: Set[String])(using Context) extends UntypedT
       case Ident(name) =>
         val nameStr = name.toString
         if !declared.contains(nameStr) &&
-          !isScalaKeyword(nameStr) &&
+          !ScalaKeywords.contains(nameStr) &&
           !candidates.contains(nameStr) &&
-          isWordCandidate(nameStr) then
-          candidates(nameStr) = IdKind.Word
+          isWordCandidate(nameStr)
+        then candidates(nameStr) = IdKind.Word
       // Don't traverse children of Ident
 
       // Method call on identifier - could be PROFESS chaining
@@ -272,7 +261,7 @@ class ExpressionCollector(declared: Set[String])(using Context) extends UntypedT
   private def isKindCandidate(name: String): Boolean =
     name.nonEmpty &&
       name.head.isLower &&
-      !isScalaKeyword(name)
+      !ScalaKeywords.contains(name)
 
   /** Check if this could be a PROFESS word */
   private def isWordCandidate(name: String): Boolean =
@@ -282,48 +271,129 @@ class ExpressionCollector(declared: Set[String])(using Context) extends UntypedT
 
   private val commonScalaIds = Set(
     // Common methods
-    "println", "print", "printf", "main", "args", "apply", "unapply", "update",
-    "toString", "hashCode", "equals", "getClass", "wait", "notify", "notifyAll",
-    "synchronized", "clone", "finalize",
+    "println",
+    "print",
+    "printf",
+    "main",
+    "args",
+    "apply",
+    "unapply",
+    "update",
+    "toString",
+    "hashCode",
+    "equals",
+    "getClass",
+    "wait",
+    "notify",
+    "notifyAll",
+    "synchronized",
+    "clone",
+    "finalize",
     // Collection methods
-    "map", "flatMap", "filter", "foreach", "fold", "foldLeft", "foldRight",
-    "reduce", "reduceLeft", "reduceRight", "collect", "collectFirst",
-    "head", "tail", "last", "init", "isEmpty", "nonEmpty", "size", "length",
-    "take", "drop", "slice", "splitAt", "takeWhile", "dropWhile", "span",
-    "find", "exists", "forall", "contains", "indexOf", "lastIndexOf",
-    "zip", "zipWithIndex", "unzip", "flatten", "distinct", "sorted", "reverse",
-    "mkString", "toList", "toSeq", "toSet", "toMap", "toArray", "toVector",
-    "groupBy", "partition", "count", "sum", "product", "min", "max",
+    "map",
+    "flatMap",
+    "filter",
+    "foreach",
+    "fold",
+    "foldLeft",
+    "foldRight",
+    "reduce",
+    "reduceLeft",
+    "reduceRight",
+    "collect",
+    "collectFirst",
+    "head",
+    "tail",
+    "last",
+    "init",
+    "isEmpty",
+    "nonEmpty",
+    "size",
+    "length",
+    "take",
+    "drop",
+    "slice",
+    "splitAt",
+    "takeWhile",
+    "dropWhile",
+    "span",
+    "find",
+    "exists",
+    "forall",
+    "contains",
+    "indexOf",
+    "lastIndexOf",
+    "zip",
+    "zipWithIndex",
+    "unzip",
+    "flatten",
+    "distinct",
+    "sorted",
+    "reverse",
+    "mkString",
+    "toList",
+    "toSeq",
+    "toSet",
+    "toMap",
+    "toArray",
+    "toVector",
+    "groupBy",
+    "partition",
+    "count",
+    "sum",
+    "product",
+    "min",
+    "max",
     // Common types (as identifiers)
-    "Some", "None", "Left", "Right", "Nil", "Seq", "List", "Set", "Map",
-    "Vector", "Array", "Range", "Option", "Either", "Try", "Future",
-    "Int", "Long", "Double", "Float", "String", "Boolean", "Char", "Byte", "Short",
-    "Unit", "Any", "AnyRef", "AnyVal", "Nothing", "Null",
+    "Some",
+    "None",
+    "Left",
+    "Right",
+    "Nil",
+    "Seq",
+    "List",
+    "Set",
+    "Map",
+    "Vector",
+    "Array",
+    "Range",
+    "Option",
+    "Either",
+    "Try",
+    "Future",
+    "Int",
+    "Long",
+    "Double",
+    "Float",
+    "String",
+    "Boolean",
+    "Char",
+    "Byte",
+    "Short",
+    "Unit",
+    "Any",
+    "AnyRef",
+    "AnyVal",
+    "Nothing",
+    "Null",
     // Boolean literals (already keywords but be safe)
-    "true", "false", "null",
+    "true",
+    "false",
+    "null",
     // Common implicits
-    "implicitly", "summon", "the",
+    "implicitly",
+    "summon",
+    "the",
     // Predef
-    "require", "assert", "assume", "identity", "locally"
+    "require",
+    "assert",
+    "assume",
+    "identity",
+    "locally"
   )
 
-  private def isScalaKeyword(name: String): Boolean =
-    scalaKeywords.contains(name)
-
-  private val scalaKeywords = Set(
-    "abstract", "case", "catch", "class", "def", "do", "else", "extends",
-    "false", "final", "finally", "for", "forSome", "if", "implicit",
-    "import", "lazy", "match", "new", "null", "object", "override",
-    "package", "private", "protected", "return", "sealed", "super",
-    "this", "throw", "trait", "true", "try", "type", "val", "var",
-    "while", "with", "yield", "given", "using", "then", "enum", "export",
-    "end", "infix", "inline", "opaque", "open", "transparent", "derives"
-  )
-
-
-/**
- * Generates scaffolding ValDefs for PROFESS identifiers.
- */
+/** Generates scaffolding ValDefs for PROFESS identifiers.
+  */
 object ScaffoldGenerator:
 
   def generate(identifiers: Map[String, IdKind])(using Context): List[ValDef] =
@@ -356,13 +426,13 @@ object ScaffoldGenerator:
       )
     ).withFlags(Synthetic)
 
-
-/**
- * Injects scaffolding into the AST.
- */
+/** Injects scaffolding into the AST.
+  */
 object ASTInjector:
 
-  def inject(tree: Tree, scaffolding: List[ValDef], declared: Set[String])(using Context): Tree =
+  def inject(tree: Tree, scaffolding: List[ValDef], declared: Set[String])(using
+      Context
+  ): Tree =
     if scaffolding.isEmpty then return tree
 
     object Injector extends UntypedTreeMap:
@@ -382,10 +452,10 @@ object ASTInjector:
     Injector.transform(tree)
 
   private def injectIntoTemplate(
-                                  template: Template,
-                                  scaffolding: List[ValDef],
-                                  declared: Set[String]
-                                )(using Context): Template =
+      template: Template,
+      scaffolding: List[ValDef],
+      declared: Set[String]
+  )(using Context): Template =
     // Check if this template uses any PROFESS patterns
     if !containsProfessExpressions(template.body) then return template
 
@@ -397,8 +467,8 @@ object ASTInjector:
     val relevantScaffolding = scaffolding.filter { vd =>
       val name = vd.name.toString
       usedIds.contains(name) &&
-        !localDeclared.contains(name) &&
-        !declared.contains(name)
+      !localDeclared.contains(name) &&
+      !declared.contains(name)
     }
 
     if relevantScaffolding.isEmpty then return template
@@ -411,20 +481,25 @@ object ASTInjector:
       body = relevantScaffolding ++ template.body
     )
 
-  private def containsProfessExpressions(stats: List[Tree])(using Context): Boolean =
+  private def containsProfessExpressions(stats: List[Tree])(using
+      Context
+  ): Boolean =
     var found = false
     object Checker extends UntypedTreeTraverser:
       override def traverse(tree: Tree)(using Context): Unit =
         if !found then
           tree match
-            case Apply(Ident(name), List(Ident(_))) if name.toString.head.isLower =>
+            case Apply(Ident(name), List(Ident(_)))
+                if name.toString.head.isLower =>
               found = true
             case _ =>
               traverseChildren(tree)
     stats.foreach(Checker.traverse)
     found
 
-  private def collectUsedIdentifiers(stats: List[Tree])(using Context): Set[String] =
+  private def collectUsedIdentifiers(stats: List[Tree])(using
+      Context
+  ): Set[String] =
     val ids = mutable.Set[String]()
     object Collector extends UntypedTreeTraverser:
       override def traverse(tree: Tree)(using Context): Unit =
@@ -436,11 +511,13 @@ object ASTInjector:
     stats.foreach(Collector.traverse)
     ids.toSet
 
-  private def collectLocalDeclarations(stats: List[Tree])(using Context): Set[String] =
+  private def collectLocalDeclarations(stats: List[Tree])(using
+      Context
+  ): Set[String] =
     val decls = mutable.Set[String]()
     stats.foreach {
-      case ValDef(name, _, _) => decls += name.toString
+      case ValDef(name, _, _)    => decls += name.toString
       case DefDef(name, _, _, _) => decls += name.toString
-      case _ => ()
+      case _                     => ()
     }
     decls.toSet
