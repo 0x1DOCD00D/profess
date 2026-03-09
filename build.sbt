@@ -49,6 +49,7 @@ val sttpVersion = "3.9.8"
 val tapirVersion = "1.11.11"
 val catsSTMVersion = "0.13.4"
 val osLibVersion = "0.11.4"
+val scalaParserCombinatorsVersion = "2.4.0"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dependencies
@@ -74,6 +75,8 @@ val log4CatsCore = "org.typelevel" %% "log4cats-core" % log4catsVersion
 val log4CatsSfl = "org.typelevel" %% "log4cats-slf4j" % log4catsVersion
 val log4CatsTest =
   "org.typelevel" %% "log4cats-testing" % log4catsTestingVersion % Test
+val scalaParserCombinators =
+  "org.scala-lang.modules" %% "scala-parser-combinators" % scalaParserCombinatorsVersion
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Global Settings
@@ -140,6 +143,9 @@ lazy val commonSettings = Seq(
   testFrameworks += new TestFramework("munit.Framework")
 )
 
+lazy val preprocessorSelfTest =
+  taskKey[Unit]("Run edge-case checks for PROFESS source preprocessing.")
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Plugin Module
 // Scala 3 compiler plugin for PROFESS syntax scaffolding
@@ -167,7 +173,8 @@ lazy val runtime = project
   .in(file("runtime"))
   .settings(commonSettings)
   .settings(
-    name := "profess-runtime"
+    name := "profess-runtime",
+    libraryDependencies += scalaParserCombinators
   )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -186,7 +193,168 @@ lazy val examples = project
     // Enable the PROFESS compiler plugin
     addCompilerPlugin("com.profess" %% "profess-plugin" % "0.1.0-SNAPSHOT"),
     // Uncomment to see debug output (per-unit phase echo) or comment to remove debug flag:
-    scalacOptions += "-P:profess:debug",
+//    scalacOptions += "-P:profess:debug",
+    Compile / compile := (Compile / compile)
+      .dependsOn(plugin / publishLocal)
+      .value
+  )
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sentences Module
+// Playground for writing English-like PROFESS sentences and running them
+// ─────────────────────────────────────────────────────────────────────────────
+
+lazy val sentences = project
+  .in(file("sentences"))
+  .dependsOn(runtime)
+  .settings(commonSettings)
+  .settings(
+    name := "profess-sentences",
+    publish / skip := true,
+    addCompilerPlugin("com.profess" %% "profess-plugin" % "0.1.0-SNAPSHOT"),
+    Compile / unmanagedSources := {
+      val sources = (Compile / unmanagedSources).value
+      sources.filterNot { file =>
+        file.ext == "scala" && ProfessPreprocessorSupport.isProfessEnabled(IO.read(file))
+      }
+    },
+    Compile / sourceGenerators += Def.task {
+      val srcDir = (Compile / scalaSource).value
+      val outDir = (Compile / sourceManaged).value / "profess"
+      val rawSources = (srcDir ** "*.scala").get
+      val enabledSources =
+        rawSources.filter(f => ProfessPreprocessorSupport.isProfessEnabled(IO.read(f)))
+
+      enabledSources.map { inFile =>
+        val relPath = inFile.relativeTo(srcDir).get.getPath
+        val outFile = outDir / relPath
+        IO.createDirectory(outFile.getParentFile)
+        val original = IO.read(inFile)
+        val rewritten = ProfessPreprocessorSupport.preprocessProfessSource(original, Some(inFile))
+        IO.write(outFile, rewritten)
+        outFile
+      }
+    }.taskValue,
+    preprocessorSelfTest := {
+      val log = streams.value.log
+      def checkCase(name: String, input: String, expected: String): Unit = {
+        val actual = ProfessPreprocessorSupport.preprocessProfessSource(input)
+        if (actual != expected) {
+          log.error(s"FAIL: $name")
+          log.error("--- Input ---")
+          log.error(input)
+          log.error("--- Expected ---")
+          log.error(expected)
+          log.error("--- Actual ---")
+          log.error(actual)
+          sys.error(
+            s"""Preprocessor case failed: $name
+               |--- Input ---
+               |$input
+               |--- Expected ---
+               |$expected
+               |--- Actual ---
+               |$actual
+               |""".stripMargin
+          )
+        } else {
+          log.info(s"PASS: $name")
+        }
+      }
+
+      checkCase(
+        "unclosed marker is left unchanged",
+        """|// @profess
+           |object X:
+           |  val trade = @:- (broker Mark) sold 700 (stock MSFT) at 150:dollars
+           |""".stripMargin,
+        """|// @profess
+           |object X:
+           |  val trade = @:- (broker Mark) sold 700 (stock MSFT) at 150:dollars
+           |""".stripMargin
+      )
+
+      checkCase(
+        "stray end marker is left unchanged",
+        """|// @profess
+           |object X:
+           |  val trade = (broker Mark) sold 700 (stock MSFT) at 150:dollars -:@
+           |""".stripMargin,
+        """|// @profess
+           |object X:
+           |  val trade = (broker Mark) sold 700 (stock MSFT) at 150:dollars -:@
+           |""".stripMargin
+      )
+
+      checkCase(
+        "adjacent marker blocks rewrite independently",
+        """|// @profess
+           |object X:
+           |  val a = @:- (broker Mark) sold 1 (stock MSFT) at 1:dollars -:@
+           |  val b = @:- (broker Jane) bought 2 (stock AAPL) at 2:dollars -:@
+           |""".stripMargin,
+        """|// @profess
+           |object X:
+           |  val a = FESS("(broker Mark) sold 1 (stock MSFT) at 1:dollars")
+           |  val b = FESS("(broker Jane) bought 2 (stock AAPL) at 2:dollars")
+           |""".stripMargin
+      )
+
+      checkCase(
+        "marker tokens inside string are not rewritten",
+        """|// @profess
+           |object X:
+           |  val s = "marker @:- keep -:@ string"
+           |""".stripMargin,
+        """|// @profess
+           |object X:
+           |  val s = "marker @:- keep -:@ string"
+           |""".stripMargin
+      )
+
+      checkCase(
+        "normal scala assignment remains unchanged",
+        """|// @profess
+           |object X:
+           |  val n = 1 + 2
+           |""".stripMargin,
+        """|// @profess
+           |object X:
+           |  val n = 1 + 2
+           |""".stripMargin
+      )
+
+      checkCase(
+        "multiline marker escapes content safely",
+        """|// @profess
+           |object X:
+           |  val p = @:-
+           |    (broker Mark) said "hello\\path"
+           |    then moved
+           |  -:@
+           |""".stripMargin,
+        """|// @profess
+           |object X:
+           |  val p = FESS("(broker Mark) said \"hello\\\\path\"\n    then moved")
+           |""".stripMargin
+      )
+
+      checkCase(
+        "mixed scala and profess lines",
+        """|// @profess
+           |object X:
+           |  val x = 42
+           |  val t = (broker Mark) sold 700 (stock MSFT) at 150:dollars
+           |  def inc(v: Int): Int = v + 1
+           |""".stripMargin,
+        """|// @profess
+           |object X:
+           |  val x = 42
+           |  val t = FESS("(broker Mark) sold 700 (stock MSFT) at 150:dollars")
+           |  def inc(v: Int): Int = v + 1
+           |""".stripMargin
+      )
+    },
     Compile / compile := (Compile / compile)
       .dependsOn(plugin / publishLocal)
       .value
@@ -216,7 +384,7 @@ lazy val docs = project
 
 lazy val root = project
   .in(file("."))
-  .aggregate(plugin, runtime, examples)
+  .aggregate(plugin, runtime, examples, sentences)
   .settings(
     name := "profess",
     // Don't publish the root project
@@ -231,3 +399,4 @@ addCommandAlias("fmt", "scalafmtAll")
 addCommandAlias("fmtCheck", "scalafmtCheckAll")
 addCommandAlias("build", "compile; test")
 addCommandAlias("runExamples", "examples/run")
+addCommandAlias("runSentences", "sentences/run")

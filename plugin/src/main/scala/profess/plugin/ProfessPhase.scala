@@ -15,7 +15,7 @@ import dotty.tools.dotc.report
   *
   * Runs after parser, before typer.
   */
-class ProfessPhase(debug: Boolean) extends PluginPhase:
+class ProfessPhase(debug: Boolean, dumpAst: Boolean) extends PluginPhase:
 
   val phaseName: String = "profess"
 
@@ -32,6 +32,12 @@ class ProfessPhase(debug: Boolean) extends PluginPhase:
     val untypedTree = unit.untpdTree
 
     if untypedTree != null then
+      val containsFessCall = FessCallDetector.existsIn(untypedTree)
+
+      if dumpAst && containsFessCall then
+        report.echo(s"[PROFESS] AST before transform for $fileName")
+        report.echo(ASTPrinter.print(untypedTree))
+
       // 1. Collect ALL declared identifiers in the compilation unit
       val declCollector = DeclarationCollector()
       declCollector.traverse(untypedTree)
@@ -69,5 +75,9 @@ class ProfessPhase(debug: Boolean) extends PluginPhase:
             ASTInjector.inject(untypedTree, scaffolding, declared)
 
           unit.untpdTree = transformed
+
+      if dumpAst && containsFessCall then
+        report.echo(s"[PROFESS] AST after transform for $fileName")
+        report.echo(ASTPrinter.print(unit.untpdTree))
 
     ctx
