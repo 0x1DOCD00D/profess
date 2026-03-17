@@ -135,28 +135,36 @@ The handler keys (`"broker"`, `"sold"`, `"stock"`) are just the words from the s
 
 // Scala reserved words that cannot be identifiers without backticks
 val scalaReserved = Set(
-  "abstract", "case", "catch", "class", "def", "do", "else",
-  "extends", "false", "final", "finally", "for", "forSome",
-  "if", "implicit", "import", "lazy", "match", "new", "null",
-  "object", "override", "package", "private", "protected",
-  "return", "sealed", "super", "this", "throw", "trait",
-  "true", "try", "type", "val", "var", "while", "with", "yield",
-  // Soft keywords that may cause issues in certain positions:
-  "given", "using", "then", "enum", "export", "end"
+   "abstract", "case", "catch", "class", "def", "do", "else",
+   "extends", "false", "final", "finally", "for", "forSome",
+   "if", "implicit", "import", "lazy", "match", "new", "null",
+   "object", "override", "package", "private", "protected",
+   "return", "sealed", "super", "this", "throw", "trait",
+   "true", "try", "type", "val", "var", "while", "with", "yield",
+   // Soft keywords that may cause issues in certain positions:
+   "given", "using", "then", "enum", "export", "end"
 )
 
 
-sealed trait SentenceToken:
-  def originalText: String
+sealed trait SentenceToken
 
-case class EntityGroup(kind: String, name: String) extends SentenceToken:
-  def originalText = s"($kind $name)"
+:
+def originalText: String
 
-case class NumericLit(value: String) extends SentenceToken:
-  def originalText = value
+case class EntityGroup(kind: String, name: String) extends SentenceToken
 
-case class Word(text: String) extends SentenceToken:
-  def originalText = text
+:
+def originalText = s"($kind $name)"
+
+case class NumericLit(value: String) extends SentenceToken
+
+:
+def originalText = value
+
+case class Word(text: String) extends SentenceToken
+
+:
+def originalText = text
 
 
 // ─────────────────────────────────────────────────────────────────────
@@ -164,31 +172,31 @@ case class Word(text: String) extends SentenceToken:
 // ─────────────────────────────────────────────────────────────────────
 
 def tokenize(sentence: String): List[SentenceToken] =
-  val entityPattern = """\(\s*(\w+)\s+(\w+)\s*\)""".r
-  val result = scala.collection.mutable.ListBuffer[SentenceToken]()
+val entityPattern = """\(\s*(\w+)\s+(\w+)\s*\)""".r
+val result = scala.collection.mutable.ListBuffer[SentenceToken]()
 
-  // Find all entity groups with their positions
-  val entities = entityPattern.findAllMatchIn(sentence).toList
+// Find all entity groups with their positions
+val entities = entityPattern.findAllMatchIn(sentence).toList
 
-  var pos = 0
-  for m <- entities do
-    // Words between previous position and this entity
-    val gap = sentence.substring(pos, m.start).trim
-    if gap.nonEmpty then
-      for w <- gap.split("\\s+") if w.nonEmpty do
-        if w.matches("-?\\d+(\\.\\d+)?") then result += NumericLit(w)
-        else result += Word(w)
-    result += EntityGroup(m.group(1), m.group(2))
-    pos = m.end
+var pos = 0
+for m <- entities do
+// Words between previous position and this entity
+val gap = sentence.substring(pos, m.start).trim
+if gap.nonEmpty then
+   for w <- gap.split("\\s+") if w.nonEmpty do
+      if w.matches("-?\\d+(\\.\\d+)?") then result += NumericLit(w)
+      else result += Word(w)
+result += EntityGroup(m.group(1), m.group(2))
+pos = m.end
 
-  // Trailing words after last entity
-  val trailing = sentence.substring(pos).trim
-  if trailing.nonEmpty then
-    for w <- trailing.split("\\s+") if w.nonEmpty do
+// Trailing words after last entity
+val trailing = sentence.substring(pos).trim
+if trailing.nonEmpty then
+   for w <- trailing.split("\\s+") if w.nonEmpty do
       if w.matches("-?\\d+(\\.\\d+)?") then result += NumericLit(w)
       else result += Word(w)
 
-  result.toList
+result.toList
 
 
 // ─────────────────────────────────────────────────────────────────────
@@ -205,56 +213,58 @@ def tokenize(sentence: String): List[SentenceToken] =
 // ─────────────────────────────────────────────────────────────────────
 
 sealed trait InfixRole
-case object ExprRole extends InfixRole    // value / receiver / argument
-case object MethodRole extends InfixRole  // identifier in method position
+
+case object ExprRole extends InfixRole // value / receiver / argument
+
+case object MethodRole extends InfixRole // identifier in method position
 
 case class PositionedToken(
-  token: SentenceToken,
-  naturalRole: InfixRole,  // what the token naturally wants to be
-  assignedRole: InfixRole  // what position it ends up in
-)
+                                  token: SentenceToken,
+                                  naturalRole: InfixRole, // what the token naturally wants to be
+                                  assignedRole: InfixRole // what position it ends up in
+                          )
 
 def assignPositions(tokens: List[SentenceToken]): List[PositionedToken] =
-  // Determine natural role of each token
-  val naturals: List[(SentenceToken, InfixRole)] = tokens.map {
-    case e: EntityGroup => (e, ExprRole)   // entities are always expressions
-    case n: NumericLit  => (n, ExprRole)   // numbers are always expressions
-    case w: Word        => (w, MethodRole) // words default to method position
-    // (words CAN be expressions too, but method is the default
-    //  because in English: "Mark sold 700" → Mark.sold(700))
-  }
+// Determine natural role of each token
+val naturals: List[(SentenceToken, InfixRole)] = tokens.map {
+   case e: EntityGroup => (e, ExprRole) // entities are always expressions
+   case n: NumericLit => (n, ExprRole) // numbers are always expressions
+   case w: Word => (w, MethodRole) // words default to method position
+   // (words CAN be expressions too, but method is the default
+   //  because in English: "Mark sold 700" → Mark.sold(700))
+}
 
-  // Now walk the list and assign actual infix positions.
-  // The infix chain alternates: EXPR METHOD EXPR METHOD ...
-  // We track what position we expect next.
-  val result = scala.collection.mutable.ListBuffer[PositionedToken]()
-  var expectExpr = true // start expecting an expression
+// Now walk the list and assign actual infix positions.
+// The infix chain alternates: EXPR METHOD EXPR METHOD ...
+// We track what position we expect next.
+val result = scala.collection.mutable.ListBuffer[PositionedToken]()
+var expectExpr = true // start expecting an expression
 
-  for (token, natural) <- naturals do
-    if expectExpr then
+for (token, natural) <- naturals do
+   if expectExpr then
       // We need an expression here
       result += PositionedToken(token, natural, ExprRole)
-      expectExpr = false // next should be a method
-    else
-      // We need a method here
-      if natural == MethodRole then
-        // Perfect: bare word in method position
-        result += PositionedToken(token, natural, MethodRole)
-        expectExpr = true // next should be an expression
-      else
-        // Conflict: entity or number in method position.
-        // This means two expressions in a row.
-        // Resolution: the previous expr's type gets .apply()
-        // to accept this expr as an argument. No method between them.
-        // We keep this as an expression and DON'T flip expectExpr.
-        result += PositionedToken(token, natural, ExprRole)
-        // expectExpr stays false — we still need a method next
-        // But actually after .apply(thisExpr), we're back to
-        // having a result, so next should be a method.
-        // Let's set expectExpr = false (next = method).
-        expectExpr = false
+expectExpr = false // next should be a method
+else
+// We need a method here
+if natural == MethodRole then
+   // Perfect: bare word in method position
+   result += PositionedToken(token, natural, MethodRole)
+expectExpr = true // next should be an expression
+else
+// Conflict: entity or number in method position.
+// This means two expressions in a row.
+// Resolution: the previous expr's type gets .apply()
+// to accept this expr as an argument. No method between them.
+// We keep this as an expression and DON'T flip expectExpr.
+result += PositionedToken(token, natural, ExprRole)
+// expectExpr stays false — we still need a method next
+// But actually after .apply(thisExpr), we're back to
+// having a result, so next should be a method.
+// Let's set expectExpr = false (next = method).
+expectExpr = false
 
-  result.toList
+result.toList
 
 
 // ─────────────────────────────────────────────────────────────────────
@@ -271,93 +281,97 @@ def assignPositions(tokens: List[SentenceToken]): List[PositionedToken] =
 // ─────────────────────────────────────────────────────────────────────
 
 def normalize(positioned: List[PositionedToken]): String =
-  if positioned.isEmpty then return ""
+   if positioned.isEmpty then return ""
 
-  val sb = new StringBuilder
-  var prevRole: InfixRole = null
-  var isFirst = true
+val sb = new lang.StringBuilder
+var prevRole: InfixRole = null
+var isFirst = true
 
-  for pt <- positioned do
-    val tok = pt.token
-    val role = pt.assignedRole
+for pt <- positioned do
+val tok = pt.token
+val role = pt.assignedRole
 
-    // Check if we need to fix the start
-    if isFirst then
-      role match
-        case ExprRole =>
-          // Fine: expression at start
-          sb ++= emitExpr(tok)
-        case MethodRole =>
-          // Problem: method at start has no receiver
-          // Fix: prepend a synthetic receiver
-          sb ++= "__ "
-          sb ++= emitMethod(tok)
-      isFirst = false
-      prevRole = role
+// Check if we need to fix the start
+if isFirst then
+   role match
+case ExprRole =>
+   // Fine: expression at start
+   sb ++= emitExpr(tok)
+case MethodRole =>
+   // Problem: method at start has no receiver
+   // Fix: prepend a synthetic receiver
+   sb ++= "__ "
+sb ++= emitMethod(tok)
+isFirst = false
+prevRole = role
 
-    else
-      (prevRole, role) match
-        case (ExprRole, MethodRole) =>
-          // Normal: expr METHOD → emit " method"
-          sb ++= " "
-          sb ++= emitMethod(tok)
+else
+(prevRole, role) match
+case (ExprRole, MethodRole) =>
+   // Normal: expr METHOD → emit " method"
+   sb ++= " "
+sb ++= emitMethod(tok)
 
-        case (MethodRole, ExprRole) =>
-          // Normal: method EXPR → emit " expr" (argument to method)
-          sb ++= " "
-          sb ++= emitExpr(tok)
+case (MethodRole, ExprRole) =>
+   // Normal: method EXPR → emit " expr" (argument to method)
+   sb ++= " "
+sb ++= emitExpr(tok)
 
-        case (ExprRole, ExprRole) =>
-          // Two expressions in a row!
-          // The first expr's result type needs .apply(second)
-          // In Scala: `result (nextExpr)` works if result has apply.
-          // But `result 700` does NOT work (number is not in parens).
-          // Fix: wrap the second expr in parens if it's a number.
-          tok match
-            case _: NumericLit =>
-              sb ++= s"(${emitExpr(tok)})"
-            case _ =>
-              sb ++= " "
-              sb ++= emitExpr(tok)
+case (ExprRole, ExprRole) =>
+   // Two expressions in a row!
+   // The first expr's result type needs .apply(second)
+   // In Scala: `result (nextExpr)` works if result has apply.
+   // But `result 700` does NOT work (number is not in parens).
+   // Fix: wrap the second expr in parens if it's a number.
+   tok match
+case _: NumericLit =>
+        sb ++= s"(${emitExpr(tok)})"
+case _ =>
+   sb ++= " "
+sb ++= emitExpr(tok)
 
-        case (MethodRole, MethodRole) =>
-          // Two methods in a row: "sold at" without argument between.
-          // This means the first method takes no arguments.
-          // In Scala: expr.sold.at is valid (two no-arg method calls).
-          // But we're in infix notation... "result sold at 150"
-          // would be parsed as result.sold(at).???(150).
-          // Fix: make the first one a no-arg call: result.sold at 150
-          // The preprocessor should emit "result.sold at 150"
-          // But we're building a flat string, so we use dot notation
-          // for the first method.
-          // Actually, this means the PREVIOUS method should have been
-          // emitted with dot notation, not infix. We need lookahead.
-          // Simplification: just emit it and let the scaffolding
-          // generator create a compatible type chain.
-          sb ++= " "
-          sb ++= emitMethod(tok)
+case (MethodRole, MethodRole) =>
+   // Two methods in a row: "sold at" without argument between.
+   // This means the first method takes no arguments.
+   // In Scala: expr.sold.at is valid (two no-arg method calls).
+   // But we're in infix notation... "result sold at 150"
+   // would be parsed as result.sold(at).???(150).
+   // Fix: make the first one a no-arg call: result.sold at 150
+   // The preprocessor should emit "result.sold at 150"
+   // But we're building a flat string, so we use dot notation
+   // for the first method.
+   // Actually, this means the PREVIOUS method should have been
+   // emitted with dot notation, not infix. We need lookahead.
+   // Simplification: just emit it and let the scaffolding
+   // generator create a compatible type chain.
+   sb ++= " "
+sb ++= emitMethod(tok)
 
-      prevRole = role
+prevRole = role
 
-  sb.toString
+sb.toString
 
 
 def emitExpr(tok: SentenceToken): String = tok match
-  case EntityGroup(kind, name) => s"($kind $name)"
-  case NumericLit(v)           => v
-  case Word(text)              =>
-    val cleaned = text.replace("-", "_")
-    if scalaReserved.contains(cleaned) then s"`$cleaned`"
-    else cleaned
+case EntityGroup(kind, name)
+=> s"($kind $name)"
+case NumericLit(v)
+=> v
+case Word(text)
+=>
+val cleaned = text.replace("-", "_")
+if scalaReserved.contains(cleaned) then s"`$cleaned`"
+else cleaned
 
 def emitMethod(tok: SentenceToken): String = tok match
-  case Word(text) =>
-    val cleaned = text.replace("-", "_")
-    if scalaReserved.contains(cleaned) then s"`$cleaned`"
-    else cleaned
-  case other =>
-    // Shouldn't happen: entities/numbers shouldn't be in method position
-    emitExpr(other)
+case Word(text)
+=>
+val cleaned = text.replace("-", "_")
+if scalaReserved.contains(cleaned) then s"`$cleaned`"
+else cleaned
+case other =>
+   // Shouldn't happen: entities/numbers shouldn't be in method position
+   emitExpr(other)
 
 
 // ─────────────────────────────────────────────────────────────────────
@@ -376,44 +390,47 @@ def emitMethod(tok: SentenceToken): String = tok match
 // ─────────────────────────────────────────────────────────────────────
 
 case class ChainLink(
-  position: Int,
-  role: InfixRole,
-  token: SentenceToken,
-  // The type this link produces (for method: return type; for expr: its type)
-  producedType: String
-)
+                            position: Int,
+                            role: InfixRole,
+                            token: SentenceToken,
+                            // The type this link produces (for method: return type; for expr: its type)
+                            producedType: String
+                    )
 
 def buildTypeChain(positioned: List[PositionedToken]): List[ChainLink] =
-  val links = scala.collection.mutable.ListBuffer[ChainLink]()
-  var currentType = "Unit" // will be overwritten by first expr
-  var chainIdx = 0
+val links = scala.collection.mutable.ListBuffer[ChainLink]()
+var currentType = "Unit" // will be overwritten by first expr
+var chainIdx = 0
 
-  // Check if we prepended a __ receiver
-  val needsReceiver = positioned.headOption.exists(_.assignedRole == MethodRole)
-  if needsReceiver then
-    currentType = "SentenceContext"
-    links += ChainLink(0, ExprRole, Word("__"), "SentenceContext")
-    chainIdx = 1
+// Check if we prepended a __ receiver
+val needsReceiver = positioned.headOption.exists(_.assignedRole == MethodRole)
+if needsReceiver then
+   currentType = "SentenceContext"
+links += ChainLink(0, ExprRole, Word("__"), "SentenceContext")
+chainIdx = 1
 
-  for pt <- positioned do
-    val typeName = pt.token match
-      case EntityGroup(kind, _) => s"${kind.capitalize}Entity"
-      case NumericLit(_)        => "Int"
-      case Word(text)           =>
-        pt.assignedRole match
-          case MethodRole =>
-            // Method on currentType → returns a new chain type
-            chainIdx += 1
-            s"Chain_${text}_$chainIdx"
-          case ExprRole =>
-            // Bare word as expression → needs a val
-            chainIdx += 1
-            s"WordVal_${text}"
+for pt <- positioned do
+val typeName = pt.token match
+case EntityGroup(kind, _)
+=> s"${kind.capitalize}Entity"
+case NumericLit(_)
+=> "Int"
+case Word(text)
+=>
+pt.assignedRole match
+case MethodRole =>
+   // Method on currentType → returns a new chain type
+   chainIdx += 1
+s"Chain_${text}_$chainIdx"
+case ExprRole =>
+   // Bare word as expression → needs a val
+   chainIdx += 1
+s"WordVal_$text"
 
-    links += ChainLink(chainIdx, pt.assignedRole, pt.token, typeName)
-    currentType = typeName
+links += ChainLink(chainIdx, pt.assignedRole, pt.token, typeName)
+currentType = typeName
 
-  links.toList
+links.toList
 
 
 // ─────────────────────────────────────────────────────────────────────
@@ -425,89 +442,95 @@ def buildTypeChain(positioned: List[PositionedToken]): List[ChainLink] =
 // ─────────────────────────────────────────────────────────────────────
 
 case class MethodSpec(
-  onType: String,     // the type this method is defined on
-  methodName: String, // the identifier
-  argType: String,    // what the next expression's type is
-  returnType: String  // what this method returns
-)
+                             onType: String, // the type this method is defined on
+                             methodName: String, // the identifier
+                             argType: String, // what the next expression's type is
+                             returnType: String // what this method returns
+                     )
 
 case class UnifiedScaffolding(
-  entityKinds: Set[String],
-  entityNames: Map[String, Set[String]],
-  methods: List[MethodSpec],
-  applySpecs: List[(String, String, String)], // (onType, argType, returnType)
-  bareWordVals: Set[String],
-  needsSentenceContext: Boolean
-)
+                                     entityKinds: Set[String],
+                                     entityNames: Map[String, Set[String]],
+                                     methods: List[MethodSpec],
+                                     applySpecs: List[(String, String, String)], // (onType, argType, returnType)
+                                     bareWordVals: Set[String],
+                                     needsSentenceContext: Boolean
+                             )
 
 def collectScaffolding(
-  allSentences: List[String]
-): UnifiedScaffolding =
-  val entityKinds = scala.collection.mutable.Set[String]()
-  val entityNames = scala.collection.mutable.Map[String, scala.collection.mutable.Set[String]]()
-  val methods = scala.collection.mutable.ListBuffer[MethodSpec]()
-  val applySpecs = scala.collection.mutable.ListBuffer[(String, String, String)]()
-  val bareWordVals = scala.collection.mutable.Set[String]()
-  var needsCtx = false
+                              allSentences: List[String]
+                      ): UnifiedScaffolding =
+val entityKinds = scala.collection.mutable.Set[String]()
+val entityNames = scala.collection.mutable.Map[String, scala.collection.mutable.Set[String]]()
+val methods = scala.collection.mutable.ListBuffer[MethodSpec]()
+val applySpecs = scala.collection.mutable.ListBuffer[(String, String, String)]()
+val bareWordVals = scala.collection.mutable.Set[String]()
+var needsCtx = false
 
-  for sentence <- allSentences do
-    val tokens = tokenize(sentence)
-    val positioned = assignPositions(tokens)
-    val chain = buildTypeChain(positioned)
+for sentence <- allSentences do
+val tokens = tokenize(sentence)
+val positioned = assignPositions(tokens)
+val chain = buildTypeChain(positioned)
 
-    // Check if this sentence needs __ receiver
-    if positioned.headOption.exists(_.assignedRole == MethodRole) then
-      needsCtx = true
+// Check if this sentence needs __ receiver
+if positioned.headOption.exists(_.assignedRole == MethodRole) then
+   needsCtx = true
 
-    // Collect entity kinds and names
-    tokens.foreach {
-      case EntityGroup(kind, name) =>
-        entityKinds += kind
-        entityNames.getOrElseUpdate(kind, scala.collection.mutable.Set()) += name
-      case _ =>
-    }
+// Collect entity kinds and names
+tokens.foreach {
+   case EntityGroup(kind, name) =>
+      entityKinds += kind
+      entityNames.getOrElseUpdate(kind, scala.collection.mutable.Set()) += name
+   case _ =>
+}
 
-    // Walk the chain pairwise to build method specs
-    for i <- 0 until chain.length - 1 do
-      val current = chain(i)
-      val next = chain(i + 1)
+// Walk the chain pairwise to build method specs
+for i <- 0 until chain.length - 1 do
+val current = chain(i)
+val next = chain(i + 1)
 
-      next.role match
-        case MethodRole =>
-          // next is a method on current's produced type
-          // But we need the argument type too (the token AFTER next)
-          val argType = if i + 2 < chain.length then chain(i + 2).producedType else "Unit"
-          val returnType = next.producedType
-          next.token match
-            case Word(text) =>
-              methods += MethodSpec(current.producedType, text, argType, returnType)
-            case _ =>
+next.role match
+case MethodRole =>
+// next is a method on current's produced type
+// But we need the argument type too (the token AFTER next)
+val argType = if i + 2 < chain.length then chain(i + 2).producedType else "Unit"
+val returnType = next.producedType
+next.token match
+case Word(text)
+=>
+methods += MethodSpec(current.producedType, text, argType, returnType)
+case _ =>
 
-        case ExprRole =>
-          if current.role == ExprRole then
-            // Two exprs in a row → need .apply on current's type
-            applySpecs += ((current.producedType, next.producedType, s"${current.producedType}_${next.producedType}"))
+case ExprRole =>
+   if current.role == ExprRole then
+      // Two exprs in a row → need .apply on current's type
+   {
+      applySpecs += (current.producedType, next.producedType, s"${current.producedType}_${next.producedType}")
+   }
 
-          // If the expr is a bare word, it needs a val
-          next.token match
-            case Word(text) if next.role == ExprRole =>
-              bareWordVals += text
-            case _ =>
+// If the expr is a bare word, it needs a val
+next.token match
+case Word(text)
+if next.role == ExprRole
+=>
+bareWordVals += text
+case _ =>
 
-  UnifiedScaffolding(
-    entityKinds.toSet,
-    entityNames.map((k, v) => k -> v.toSet).toMap,
-    methods.toList.distinctBy(m => (m.onType, m.methodName)),
-    applySpecs.toList.distinct,
-    bareWordVals.toSet,
-    needsCtx
-  )
+   UnifiedScaffolding(
+      entityKinds.toSet,
+      entityNames.map((k, v) => k -> v.toSet).toMap,
+      methods.toList.distinctBy(m => (m.onType, m.methodName)),
+      applySpecs.toList.distinct,
+      bareWordVals.toSet,
+      needsCtx
+   )
 
 
 def generateCode(scaffolding: UnifiedScaffolding): String =
-  val sb = new StringBuilder
+val sb = new lang.StringBuilder
 
-  sb ++= """// ═══ AUTO-GENERATED BY PROFESS ═══
+sb ++=
+        """// ═══ AUTO-GENERATED BY PROFESS ═══
 // Regenerated on every compile. Do not edit.
 package profess.generated
 
@@ -524,124 +547,125 @@ trait ChainExpr:
 
 """
 
-  // ── KeywordTemplate ──
-  sb ++= """class KeywordTemplate[T <: ProfessEntity](
+// ── KeywordTemplate ──
+sb ++=
+        """class KeywordTemplate[T <: ProfessEntity](
   factory: String => T
 ) extends Dynamic:
   infix def selectDynamic(name: String): T = factory(name)
 
 """
 
-  // ── Sentence context (for bare-word-first sentences) ──
-  if scaffolding.needsSentenceContext then
-    val ctxMethods = scaffolding.methods.filter(_.onType == "SentenceContext")
-    sb ++= "object __ extends ChainExpr:\n"
-    sb ++= "  def toNode: GraphNode = SentenceRoot(IR.nextId())\n"
-    for m <- ctxMethods do
-      val cleanName = if scalaReserved.contains(m.methodName) then s"`${m.methodName}`" else m.methodName
-      sb ++= s"  infix def $cleanName(arg: ${m.argType} | Int | Double | ProfessEntity): ${m.returnType} =\n"
-      sb ++= s"    IR.record(ConnectorEdge(this.toNode.id, \"${m.methodName}\", IR.nextId()))\n"
-      sb ++= s"    ${m.returnType}(this, arg)\n"
-    sb ++= "\n"
+// ── Sentence context (for bare-word-first sentences) ──
+if scaffolding.needsSentenceContext then
+val ctxMethods = scaffolding.methods.filter(_.onType == "SentenceContext")
+sb ++= "object __ extends ChainExpr:\n"
+sb ++= "  def toNode: GraphNode = SentenceRoot(IR.nextId())\n"
+for m <- ctxMethods do
+val cleanName = if scalaReserved.contains(m.methodName) then s"`${m.methodName}`" else m.methodName
+sb ++= s"  infix def $cleanName(arg: ${m.argType} | Int | Double | ProfessEntity): ${m.returnType} =\n"
+sb ++= s"    IR.record(ConnectorEdge(this.toNode.id, \"${m.methodName}\", IR.nextId()))\n"
+sb ++= s"    ${m.returnType}(this, arg)\n"
+sb ++= "\n"
 
-  // ── Entity case classes ──
-  for kind <- scaffolding.entityKinds do
-    val className = s"${kind.capitalize}Entity"
-    val entityMethods = scaffolding.methods.filter(_.onType == className)
-    val entityApplies = scaffolding.applySpecs.filter(_._1 == className)
+// ── Entity case classes ──
+for kind <- scaffolding.entityKinds do
+val className = s"${kind.capitalize}Entity"
+val entityMethods = scaffolding.methods.filter(_.onType == className)
+val entityApplies = scaffolding.applySpecs.filter(_._1 == className)
 
-    sb ++= s"case class $className(name: String) extends ProfessEntity:\n"
-    sb ++= s"  def toNode: GraphNode = EntityNode(IR.nextId(), \"$kind\", name)\n"
+sb ++= s"case class $className(name: String) extends ProfessEntity:\n"
+sb ++= s"  def toNode: GraphNode = EntityNode(IR.nextId(), \"$kind\", name)\n"
 
-    for m <- entityMethods do
-      val cleanName = if scalaReserved.contains(m.methodName) then s"`${m.methodName}`" else m.methodName
-      sb ++= s"  infix def $cleanName(arg: ${m.argType} | Int | Double | ProfessEntity): ${m.returnType} =\n"
-      sb ++= s"    IR.record(ConnectorEdge(this.toNode.id, \"${m.methodName}\", IR.nextId()))\n"
-      sb ++= s"    ${m.returnType}(this, arg)\n"
+for m <- entityMethods do
+val cleanName = if scalaReserved.contains(m.methodName) then s"`${m.methodName}`" else m.methodName
+sb ++= s"  infix def $cleanName(arg: ${m.argType} | Int | Double | ProfessEntity): ${m.returnType} =\n"
+sb ++= s"    IR.record(ConnectorEdge(this.toNode.id, \"${m.methodName}\", IR.nextId()))\n"
+sb ++= s"    ${m.returnType}(this, arg)\n"
 
-    for (_, argType, retType) <- entityApplies do
-      sb ++= s"  def apply(arg: $argType): $retType =\n"
-      sb ++= s"    IR.record(ApplyEdge(this.toNode.id, arg match { case e: ProfessEntity => e.toNode.id; case _ => IR.nextId() }))\n"
-      sb ++= s"    $retType(this, arg)\n"
+for (_, argType, retType) <- entityApplies do
+   sb ++= s"  def apply(arg: $argType): $retType =\n"
+sb ++= s"    IR.record(ApplyEdge(this.toNode.id, arg match { case e: ProfessEntity => e.toNode.id; case _ => IR.nextId() }))\n"
+sb ++= s"    $retType(this, arg)\n"
 
-    sb ++= "\n"
+sb ++= "\n"
 
-  // ── KeywordTemplate vals ──
-  for kind <- scaffolding.entityKinds do
-    val className = s"${kind.capitalize}Entity"
-    sb ++= s"val $kind = new KeywordTemplate[$className](name => $className(name))\n"
-  sb ++= "\n"
+// ── KeywordTemplate vals ──
+for kind <- scaffolding.entityKinds do
+val className = s"${kind.capitalize}Entity"
+sb ++= s"val $kind = new KeywordTemplate[$className](name => $className(name))\n"
+sb ++= "\n"
 
-  // ── Chain expression classes ──
-  val allChainTypes = scaffolding.methods.map(_.returnType).toSet ++
-    scaffolding.applySpecs.map(_._3).toSet
+// ── Chain expression classes ──
+val allChainTypes = scaffolding.methods.map(_.returnType).toSet ++
+        scaffolding.applySpecs.map(_._3).toSet
 
-  for chainType <- allChainTypes do
-    val chainMethods = scaffolding.methods.filter(_.onType == chainType)
-    val chainApplies = scaffolding.applySpecs.filter(_._1 == chainType)
+for chainType <- allChainTypes do
+val chainMethods = scaffolding.methods.filter(_.onType == chainType)
+val chainApplies = scaffolding.applySpecs.filter(_._1 == chainType)
 
-    sb ++= s"case class $chainType(parent: Any, arg: Any) extends ChainExpr:\n"
-    sb ++= s"  def toNode: GraphNode = CompositeNode(IR.nextId(), \"$chainType\", Nil)\n"
+sb ++= s"case class $chainType(parent: Any, arg: Any) extends ChainExpr:\n"
+sb ++= s"  def toNode: GraphNode = CompositeNode(IR.nextId(), \"$chainType\", Nil)\n"
 
-    for m <- chainMethods do
-      val cleanName = if scalaReserved.contains(m.methodName) then s"`${m.methodName}`" else m.methodName
-      sb ++= s"  infix def $cleanName(arg: ${m.argType} | Int | Double | ProfessEntity): ${m.returnType} =\n"
-      sb ++= s"    IR.record(ConnectorEdge(this.toNode.id, \"${m.methodName}\", IR.nextId()))\n"
-      sb ++= s"    ${m.returnType}(this, arg)\n"
+for m <- chainMethods do
+val cleanName = if scalaReserved.contains(m.methodName) then s"`${m.methodName}`" else m.methodName
+sb ++= s"  infix def $cleanName(arg: ${m.argType} | Int | Double | ProfessEntity): ${m.returnType} =\n"
+sb ++= s"    IR.record(ConnectorEdge(this.toNode.id, \"${m.methodName}\", IR.nextId()))\n"
+sb ++= s"    ${m.returnType}(this, arg)\n"
 
-    for (_, argType, retType) <- chainApplies do
-      sb ++= s"  def apply(arg: $argType): $retType =\n"
-      sb ++= s"    IR.record(ApplyEdge(this.toNode.id, IR.nextId()))\n"
-      sb ++= s"    $retType(this, arg)\n"
+for (_, argType, retType) <- chainApplies do
+   sb ++= s"  def apply(arg: $argType): $retType =\n"
+sb ++= s"    IR.record(ApplyEdge(this.toNode.id, IR.nextId()))\n"
+sb ++= s"    $retType(this, arg)\n"
 
-    sb ++= "\n"
+sb ++= "\n"
 
-  // ── Bare word vals (words used as expressions, not methods) ──
-  for word <- scaffolding.bareWordVals do
-    val cleaned = word.replace("-", "_")
-    val escapedName = if scalaReserved.contains(cleaned) then s"`$cleaned`" else cleaned
-    sb ++= s"val $escapedName: WordVal_$cleaned = WordVal_$cleaned(\"$word\")\n"
+// ── Bare word vals (words used as expressions, not methods) ──
+for word <- scaffolding.bareWordVals do
+val cleaned = word.replace("-", "_")
+val escapedName = if scalaReserved.contains(cleaned) then s"`$cleaned`" else cleaned
+sb ++= s"val $escapedName: WordVal_$cleaned = WordVal_$cleaned(\"$word\")\n"
 
-  sb ++= "\n"
+sb ++= "\n"
 
-  // ── WordVal types ──
-  for word <- scaffolding.bareWordVals do
-    val cleaned = word.replace("-", "_")
-    val typeName = s"WordVal_$cleaned"
-    val wordMethods = scaffolding.methods.filter(_.onType == typeName)
+// ── WordVal types ──
+for word <- scaffolding.bareWordVals do
+val cleaned = word.replace("-", "_")
+val typeName = s"WordVal_$cleaned"
+val wordMethods = scaffolding.methods.filter(_.onType == typeName)
 
-    sb ++= s"case class $typeName(word: String) extends ChainExpr:\n"
-    sb ++= s"  def toNode: GraphNode = WordNode(IR.nextId(), word)\n"
-    for m <- wordMethods do
-      val cleanName = if scalaReserved.contains(m.methodName) then s"`${m.methodName}`" else m.methodName
-      sb ++= s"  infix def $cleanName(arg: ${m.argType} | Int | Double | ProfessEntity): ${m.returnType} =\n"
-      sb ++= s"    IR.record(ConnectorEdge(this.toNode.id, \"${m.methodName}\", IR.nextId()))\n"
-      sb ++= s"    ${m.returnType}(this, arg)\n"
-    sb ++= "\n"
+sb ++= s"case class $typeName(word: String) extends ChainExpr:\n"
+sb ++= s"  def toNode: GraphNode = WordNode(IR.nextId(), word)\n"
+for m <- wordMethods do
+val cleanName = if scalaReserved.contains(m.methodName) then s"`${m.methodName}`" else m.methodName
+sb ++= s"  infix def $cleanName(arg: ${m.argType} | Int | Double | ProfessEntity): ${m.returnType} =\n"
+sb ++= s"    IR.record(ConnectorEdge(this.toNode.id, \"${m.methodName}\", IR.nextId()))\n"
+sb ++= s"    ${m.returnType}(this, arg)\n"
+sb ++= "\n"
 
-  // ── given Conversions for Int at every position that expects it ──
-  sb ++= "// Numeric conversions\n"
-  sb ++= "given Conversion[Int, ProfessEntity] = n => NumericEntity(n)\n"
-  sb ++= "given Conversion[Double, ProfessEntity] = n => NumericEntity(n.toInt)\n"
-  sb ++= "case class NumericEntity(value: Int) extends ProfessEntity:\n"
-  sb ++= "  def toNode: GraphNode = ValueNode(IR.nextId(), Left(value.toDouble))\n"
+// ── given Conversions for Int at every position that expects it ──
+sb ++= "// Numeric conversions\n"
+sb ++= "given Conversion[Int, ProfessEntity] = n => NumericEntity(n)\n"
+sb ++= "given Conversion[Double, ProfessEntity] = n => NumericEntity(n.toInt)\n"
+sb ++= "case class NumericEntity(value: Int) extends ProfessEntity:\n"
+sb ++= "  def toNode: GraphNode = ValueNode(IR.nextId(), Left(value.toDouble))\n"
 
-  // Add extension method for Int to support `700 shares` pattern
-  sb ++= "\n// Extension for number-first patterns like '700 shares'\n"
-  sb ++= "extension (n: Int)\n"
-  for kind <- scaffolding.entityKinds do
-    // Allow 700 (stock MSFT) pattern
-    ()
-  for word <- scaffolding.bareWordVals do
-    val cleaned = word.replace("-", "_")
-    val escapedName = if scalaReserved.contains(cleaned) then s"`$cleaned`" else cleaned
-    sb ++= s"  infix def $escapedName: Chain_${cleaned}_num = \n"
-    sb ++= s"    IR.record(ValueEdge(IR.nextId(), n))\n"
-    sb ++= s"    Chain_${cleaned}_num(NumericEntity(n), WordVal_$cleaned(\"$word\"))\n"
-  sb ++= "\n"
+// Add extension method for Int to support `700 shares` pattern
+sb ++= "\n// Extension for number-first patterns like '700 shares'\n"
+sb ++= "extension (n: Int)\n"
+for kind <- scaffolding.entityKinds do
+   // Allow 700 (stock MSFT) pattern
+   ()
+for word <- scaffolding.bareWordVals do
+val cleaned = word.replace("-", "_")
+val escapedName = if scalaReserved.contains(cleaned) then s"`$cleaned`" else cleaned
+sb ++= s"  infix def $escapedName: Chain_${cleaned}_num = \n"
+sb ++= s"    IR.record(ValueEdge(IR.nextId(), n))\n"
+sb ++= s"    Chain_${cleaned}_num(NumericEntity(n), WordVal_$cleaned(\"$word\"))\n"
+sb ++= "\n"
 
-  sb ++= "// ═══ END AUTO-GENERATED ═══\n"
-  sb.toString
+sb ++= "// ═══ END AUTO-GENERATED ═══\n"
+sb.toString
 
 
 // ─────────────────────────────────────────────────────────────────────
@@ -649,68 +673,76 @@ trait ChainExpr:
 // ─────────────────────────────────────────────────────────────────────
 
 def processProject(sourceDir: java.io.File, outputDir: java.io.File): Seq[java.io.File] =
-  val scalaFiles = sourceDir.listFiles().filter(_.getName.endsWith(".scala"))
+val scalaFiles = sourceDir.listFiles().filter(_.getName.endsWith(".scala"))
 
-  // ── Phase A: Extract all sentences ──
-  val sentencesByFile = scala.collection.mutable.Map[java.io.File, List[(Int, Int, String)]]()
-  val allSentences = scala.collection.mutable.ListBuffer[String]()
+// ── Phase A: Extract all sentences ──
+val sentencesByFile = scala.collection.mutable.Map[java.io.File, List[(Int, Int, String)]]()
+val allSentences = scala.collection.mutable.ListBuffer[String]()
 
-  for file <- scalaFiles do
-    val content = scala.io.Source.fromFile(file).mkString
-    val markers = scala.collection.mutable.ListBuffer[(Int, Int, String)]()
-    var pos = 0
-    while
-      val startIdx = content.indexOf("@:-", pos)
-      if startIdx >= 0 then
-        val endIdx = content.indexOf("-:@", startIdx + 3)
-        if endIdx >= 0 then
-          val sentence = content.substring(startIdx + 3, endIdx).trim
-          markers += ((startIdx, endIdx + 3, sentence))
-          allSentences += sentence
-          pos = endIdx + 3
-          true
-        else { pos = content.length; false }
-      else { pos = content.length; false }
-    do ()
-    if markers.nonEmpty then
-      sentencesByFile(file) = markers.toList
+for file <- scalaFiles do
+val content = scala.io.Source.fromFile(file).mkString
+val markers = scala.collection.mutable.ListBuffer[(Int, Int, String)]()
+var pos = 0
+while
+val startIdx = content.indexOf("@:-", pos)
+if startIdx >= 0 then
+val endIdx = content.indexOf("-:@", startIdx + 3)
+if endIdx >= 0 then
+val sentence = content.substring(startIdx + 3, endIdx).trim
+markers += (startIdx, endIdx + 3, sentence)
+allSentences += sentence
+pos = endIdx + 3
+true
+else
+{
+   pos = content.length;
+   false
+}
+else
+{
+   pos = content.length;
+   false
+}
+do ()
+if markers.nonEmpty then
+   sentencesByFile(file) = markers.toList
 
-  // ── Phase B: Build unified scaffolding ──
-  val scaffolding = collectScaffolding(allSentences.toList)
-  val generatedCode = generateCode(scaffolding)
+// ── Phase B: Build unified scaffolding ──
+val scaffolding = collectScaffolding(allSentences.toList)
+val generatedCode = generateCode(scaffolding)
 
-  val scaffoldFile = new java.io.File(outputDir, "profess/generated/Scaffolding.scala")
-  scaffoldFile.getParentFile.mkdirs()
-  java.nio.file.Files.writeString(scaffoldFile.toPath, generatedCode)
+val scaffoldFile = new java.io.File(outputDir, "profess/generated/Scaffolding.scala")
+scaffoldFile.getParentFile.mkdirs()
+java.nio.file.Files.writeString(scaffoldFile.toPath, generatedCode)
 
-  // ── Phase C: Rewrite source files ──
-  // Replace each @:- sentence -:@ with the normalized Scala version
-  val rewrittenFiles = scalaFiles.flatMap { file =>
-    sentencesByFile.get(file).map { markers =>
+// ── Phase C: Rewrite source files ──
+// Replace each @:- sentence -:@ with the normalized Scala version
+val rewrittenFiles = scalaFiles.flatMap { file =>
+   sentencesByFile.get(file).map { markers =>
       val content = scala.io.Source.fromFile(file).mkString
       var rewritten = content
 
       // Process markers in reverse order (so positions don't shift)
       for (startIdx, endIdx, sentence) <- markers.reverse do
-        val tokens = tokenize(sentence)
-        val positioned = assignPositions(tokens)
-        val normalized = normalize(positioned)
-        rewritten = rewritten.substring(0, startIdx) + normalized + rewritten.substring(endIdx)
+      val tokens = tokenize(sentence)
+      val positioned = assignPositions(tokens)
+      val normalized = normalize(positioned)
+      rewritten = rewritten.substring(0, startIdx) + normalized + rewritten.substring(endIdx)
 
       // Add import for generated scaffolding
       if !rewritten.contains("import profess.generated.*") then
-        rewritten = rewritten.replaceFirst(
-          "(package [\\w.]+)",
-          "$1\nimport profess.generated.*"
-        )
+         rewritten = rewritten.replaceFirst(
+            "(package [\\w.]+)",
+            "$1\nimport profess.generated.*"
+         )
 
       val outFile = new java.io.File(outputDir, file.getName)
       java.nio.file.Files.writeString(outFile.toPath, rewritten)
       Some(outFile)
-    }
-  }.flatten
+   }
+}.flatten
 
-  rewrittenFiles.toSeq :+ scaffoldFile
+rewrittenFiles.toSeq :+ scaffoldFile
 
 
 // ─────────────────────────────────────────────────────────────────────
