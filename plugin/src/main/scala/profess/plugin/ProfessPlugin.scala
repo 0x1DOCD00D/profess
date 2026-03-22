@@ -118,26 +118,6 @@ object ScalaKeywords:
     "derives"
   )
 
-object FessCallDetector:
-  def existsIn(tree: Tree)(using Context): Boolean =
-    var found = false
-
-    val traverser = new UntypedTreeTraverser:
-      override def traverse(tree: Tree)(using Context): Unit =
-        if !found then
-          tree match
-            case Apply(Ident(name), _) if name.toString == "FESS" =>
-              found = true
-            case Apply(Select(_, name), _) if name.toString == "FESS" =>
-              found = true
-            case TypeApply(fun, _) =>
-              traverse(fun)
-            case _ =>
-              traverseChildren(tree)
-
-    traverser.traverse(tree)
-    found
-
 /** Collects ALL declared identifiers in the compilation unit.
   *
   * This is used to determine what should NOT be scaffolded.

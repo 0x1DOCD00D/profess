@@ -1,3 +1,5 @@
+import scala.sys.process.*
+
 // ═══════════════════════════════════════════════════════════════════════════
 // PROFESS - Programming Rule Oriented Formalized English Sentence Specifications
 // A Scala 3 Framework for Domain-Specific Languages with Formal Semantics
@@ -146,6 +148,42 @@ lazy val commonSettings = Seq(
 lazy val preprocessorSelfTest =
   taskKey[Unit]("Run edge-case checks for PROFESS source preprocessing.")
 
+// Use the in-repo compiler plugin jar directly instead of external resolution.
+def inRepoProfessPluginOptions: Seq[Def.Setting[?]] = Seq(
+  Compile / scalacOptions += {
+    val pluginJar = (plugin / Compile / packageBin).value
+    s"-Xplugin:${pluginJar.getAbsolutePath}"
+  },
+  // Fail fast if the plugin could not be loaded by scalac.
+  Compile / scalacOptions += "-Xplugin-require:profess"
+)
+
+def hasProfessDelimiter(content: String): Boolean = {
+  val marker = "@:-"
+  var i = 0
+  var inString = false
+  var escaped = false
+
+  while (i < content.length) {
+    val ch = content.charAt(i)
+    if (inString) {
+      if (escaped) escaped = false
+      else if (ch == '\\') escaped = true
+      else if (ch == '"') inString = false
+      i += 1
+    } else if (ch == '"') {
+      inString = true
+      i += 1
+    } else if (content.startsWith(marker, i)) {
+      return true
+    } else {
+      i += 1
+    }
+  }
+
+  false
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Plugin Module
 // Scala 3 compiler plugin for PROFESS syntax scaffolding
@@ -162,6 +200,19 @@ lazy val plugin = project
     // Mark as compiler plugin
     Compile / packageBin / packageOptions +=
       Package.ManifestAttributes("Scala-Compiler-Plugin" -> "true")
+  )
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Preprocessor Module
+// Dedicated tool that rewrites @:- ... -:@ blocks to FESS("...")
+// ─────────────────────────────────────────────────────────────────────────────
+
+lazy val preprocessor = project
+  .in(file("preprocessor"))
+  .settings(
+    name := "profess-preprocessor",
+    scalaVersion := scala3Version,
+    publish / skip := true
   )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -186,16 +237,15 @@ lazy val examples = project
   .in(file("examples"))
   .dependsOn(runtime)
   .settings(commonSettings)
+  .settings(inRepoProfessPluginOptions)
   .settings(
     name := "profess-examples",
     // Don't publish examples
     publish / skip := true,
-    // Enable the PROFESS compiler plugin
-    addCompilerPlugin("com.profess" %% "profess-plugin" % "0.1.0-SNAPSHOT"),
     // Uncomment to see debug output (per-unit phase echo) or comment to remove debug flag:
 //    scalacOptions += "-P:profess:debug",
     Compile / compile := (Compile / compile)
-      .dependsOn(plugin / publishLocal)
+      .dependsOn(plugin / Compile / packageBin)
       .value
   )
 
@@ -208,155 +258,64 @@ lazy val sentences = project
   .in(file("sentences"))
   .dependsOn(runtime)
   .settings(commonSettings)
+  .settings(inRepoProfessPluginOptions)
   .settings(
     name := "profess-sentences",
     publish / skip := true,
-    addCompilerPlugin("com.profess" %% "profess-plugin" % "0.1.0-SNAPSHOT"),
     Compile / unmanagedSources := {
       val sources = (Compile / unmanagedSources).value
       sources.filterNot { file =>
-        file.ext == "scala" && ProfessPreprocessorSupport.isProfessEnabled(IO.read(file))
+        file.ext == "scala" && hasProfessDelimiter(IO.read(file))
       }
     },
     Compile / sourceGenerators += Def.task {
+      val log = streams.value.log
       val srcDir = (Compile / scalaSource).value
       val outDir = (Compile / sourceManaged).value / "profess"
+      val preprocessorCp = (preprocessor / Compile / fullClasspath).value.files
+        .map(_.getAbsolutePath)
+        .mkString(java.io.File.pathSeparator)
       val rawSources = (srcDir ** "*.scala").get
       val enabledSources =
-        rawSources.filter(f => ProfessPreprocessorSupport.isProfessEnabled(IO.read(f)))
+        rawSources.filter(f => hasProfessDelimiter(IO.read(f)))
 
       enabledSources.map { inFile =>
         val relPath = inFile.relativeTo(srcDir).get.getPath
         val outFile = outDir / relPath
         IO.createDirectory(outFile.getParentFile)
-        val original = IO.read(inFile)
-        val rewritten = ProfessPreprocessorSupport.preprocessProfessSource(original, Some(inFile))
-        IO.write(outFile, rewritten)
+        val cmd = Seq(
+          "java",
+          "-cp",
+          preprocessorCp,
+          "profess.preprocessor.ProfessPreprocessorCli",
+          inFile.getAbsolutePath,
+          outFile.getAbsolutePath
+        )
+        val exitCode = Process(cmd, baseDirectory.value).!
+        if (exitCode != 0) {
+          sys.error(s"Preprocessor CLI failed for ${inFile.getAbsolutePath}")
+        } else {
+          log.debug(s"Preprocessed ${inFile.getName} -> ${outFile.getAbsolutePath}")
+        }
         outFile
       }
     }.taskValue,
     preprocessorSelfTest := {
-      val log = streams.value.log
-      def checkCase(name: String, input: String, expected: String): Unit = {
-        val actual = ProfessPreprocessorSupport.preprocessProfessSource(input)
-        if (actual != expected) {
-          log.error(s"FAIL: $name")
-          log.error("--- Input ---")
-          log.error(input)
-          log.error("--- Expected ---")
-          log.error(expected)
-          log.error("--- Actual ---")
-          log.error(actual)
-          sys.error(
-            s"""Preprocessor case failed: $name
-               |--- Input ---
-               |$input
-               |--- Expected ---
-               |$expected
-               |--- Actual ---
-               |$actual
-               |""".stripMargin
-          )
-        } else {
-          log.info(s"PASS: $name")
-        }
-      }
-
-      checkCase(
-        "unclosed marker is left unchanged",
-        """|// @profess
-           |object X:
-           |  val trade = @:- (broker Mark) sold 700 (stock MSFT) at 150:dollars
-           |""".stripMargin,
-        """|// @profess
-           |object X:
-           |  val trade = @:- (broker Mark) sold 700 (stock MSFT) at 150:dollars
-           |""".stripMargin
+      val preprocessorCp = (preprocessor / Compile / fullClasspath).value.files
+        .map(_.getAbsolutePath)
+        .mkString(java.io.File.pathSeparator)
+      val cmd = Seq(
+        "java",
+        "-cp",
+        preprocessorCp,
+        "profess.preprocessor.ProfessPreprocessorCli",
+        "--self-test"
       )
-
-      checkCase(
-        "stray end marker is left unchanged",
-        """|// @profess
-           |object X:
-           |  val trade = (broker Mark) sold 700 (stock MSFT) at 150:dollars -:@
-           |""".stripMargin,
-        """|// @profess
-           |object X:
-           |  val trade = (broker Mark) sold 700 (stock MSFT) at 150:dollars -:@
-           |""".stripMargin
-      )
-
-      checkCase(
-        "adjacent marker blocks rewrite independently",
-        """|// @profess
-           |object X:
-           |  val a = @:- (broker Mark) sold 1 (stock MSFT) at 1:dollars -:@
-           |  val b = @:- (broker Jane) bought 2 (stock AAPL) at 2:dollars -:@
-           |""".stripMargin,
-        """|// @profess
-           |object X:
-           |  val a = FESS("(broker Mark) sold 1 (stock MSFT) at 1:dollars")
-           |  val b = FESS("(broker Jane) bought 2 (stock AAPL) at 2:dollars")
-           |""".stripMargin
-      )
-
-      checkCase(
-        "marker tokens inside string are not rewritten",
-        """|// @profess
-           |object X:
-           |  val s = "marker @:- keep -:@ string"
-           |""".stripMargin,
-        """|// @profess
-           |object X:
-           |  val s = "marker @:- keep -:@ string"
-           |""".stripMargin
-      )
-
-      checkCase(
-        "normal scala assignment remains unchanged",
-        """|// @profess
-           |object X:
-           |  val n = 1 + 2
-           |""".stripMargin,
-        """|// @profess
-           |object X:
-           |  val n = 1 + 2
-           |""".stripMargin
-      )
-
-      checkCase(
-        "multiline marker escapes content safely",
-        """|// @profess
-           |object X:
-           |  val p = @:-
-           |    (broker Mark) said "hello\\path"
-           |    then moved
-           |  -:@
-           |""".stripMargin,
-        """|// @profess
-           |object X:
-           |  val p = FESS("(broker Mark) said \"hello\\\\path\"\n    then moved")
-           |""".stripMargin
-      )
-
-      checkCase(
-        "mixed scala and profess lines",
-        """|// @profess
-           |object X:
-           |  val x = 42
-           |  val t = (broker Mark) sold 700 (stock MSFT) at 150:dollars
-           |  def inc(v: Int): Int = v + 1
-           |""".stripMargin,
-        """|// @profess
-           |object X:
-           |  val x = 42
-           |  val t = FESS("(broker Mark) sold 700 (stock MSFT) at 150:dollars")
-           |  def inc(v: Int): Int = v + 1
-           |""".stripMargin
-      )
+      val exitCode = Process(cmd, baseDirectory.value).!
+      if (exitCode != 0) sys.error("Preprocessor self-test failed")
     },
     Compile / compile := (Compile / compile)
-      .dependsOn(plugin / publishLocal)
+      .dependsOn(plugin / Compile / packageBin)
       .value
   )
 
@@ -384,7 +343,7 @@ lazy val docs = project
 
 lazy val root = project
   .in(file("."))
-  .aggregate(plugin, runtime, examples, sentences)
+  .aggregate(plugin, preprocessor, runtime, examples, sentences)
   .settings(
     name := "profess",
     // Don't publish the root project

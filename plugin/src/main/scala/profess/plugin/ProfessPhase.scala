@@ -32,7 +32,17 @@ class ProfessPhase(debug: Boolean, dumpAst: Boolean) extends PluginPhase:
     val untypedTree = unit.untpdTree
 
     if untypedTree != null then
-      val containsFessCall = FessCallDetector.existsIn(untypedTree)
+      val fessCallSites = FessCallCollector.collect(untypedTree)
+      val containsFessCall = fessCallSites.nonEmpty
+
+      if debug && containsFessCall then
+        report.echo(s"[PROFESS] FESS call sites for $fileName")
+        fessCallSites.foreach { site =>
+          val owner = site.owner.getOrElse("<none>")
+          report.echo(
+            s"[PROFESS]   owner=$owner at ${site.position.line}:${site.position.column} input=${site.sourceText}"
+          )
+        }
 
       if dumpAst && containsFessCall then
         report.echo(s"[PROFESS] AST before transform for $fileName")
