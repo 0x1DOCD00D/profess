@@ -272,8 +272,10 @@ lazy val sentences = project
       val log = streams.value.log
       val srcDir = (Compile / scalaSource).value
       val outDir = (Compile / sourceManaged).value / "profess"
-      val preprocessorCp = (preprocessor / Compile / fullClasspath).value.files
-        .map(_.getAbsolutePath)
+      val preprocessorJar = (preprocessor / Compile / packageBin).value.getAbsolutePath
+      val preprocessorDeps = (preprocessor / Compile / dependencyClasspath).value.files.map(_.getAbsolutePath)
+      val preprocessorScala = (preprocessor / scalaInstance).value.allJars.map(_.getAbsolutePath)
+      val preprocessorCp = (preprocessorJar +: (preprocessorDeps ++ preprocessorScala).distinct)
         .mkString(java.io.File.pathSeparator)
       val rawSources = (srcDir ** "*.scala").get
       val enabledSources =
@@ -301,8 +303,10 @@ lazy val sentences = project
       }
     }.taskValue,
     preprocessorSelfTest := {
-      val preprocessorCp = (preprocessor / Compile / fullClasspath).value.files
-        .map(_.getAbsolutePath)
+      val preprocessorJar = (preprocessor / Compile / packageBin).value.getAbsolutePath
+      val preprocessorDeps = (preprocessor / Compile / dependencyClasspath).value.files.map(_.getAbsolutePath)
+      val preprocessorScala = (preprocessor / scalaInstance).value.allJars.map(_.getAbsolutePath)
+      val preprocessorCp = (preprocessorJar +: (preprocessorDeps ++ preprocessorScala).distinct)
         .mkString(java.io.File.pathSeparator)
       val cmd = Seq(
         "java",
