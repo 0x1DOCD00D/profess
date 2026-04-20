@@ -15,6 +15,10 @@ final case class FessCallSite(
 )
 
 object FessCallCollector:
+  // Temporary parser-phase collector for FESS(...) call sites.
+  // This runs on the untyped tree, so matching is intentionally name-based.
+  // Once FESS is resolved as a stable symbol after typer, this should move to
+  // symbol-based matching against the fully-qualified runtime entrypoint.
   def collect(tree: Tree)(using Context): List[FessCallSite] =
     val traverser = new Collector
     traverser.traverse(tree)
@@ -41,7 +45,7 @@ object FessCallCollector:
         case applyTree @ Apply(fun, args) if isFessFunction(fun) =>
           extractStringArg(args.headOption).foreach { text =>
             sites += FessCallSite(
-              owner = ownerStack.lastOption,
+              owner = if ownerStack.nonEmpty then Some(ownerStack.mkString(".")) else None,
               sourceText = text,
               position = sourcePoint(applyTree)
             )
@@ -56,6 +60,9 @@ object FessCallCollector:
       try body
       finally ownerStack.remove(ownerStack.size - 1)
 
+    // Name-based matching is acceptable only at this untyped parser-phase stage.
+    // It may over-match unrelated FESS identifiers until this collector is moved
+    // to a typed/symbol-aware phase.
     private def isFessFunction(tree: Tree): Boolean =
       tree match
         case Ident(name) =>

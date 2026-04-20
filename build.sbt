@@ -212,6 +212,8 @@ lazy val preprocessor = project
   .settings(
     name := "profess-preprocessor",
     scalaVersion := scala3Version,
+    libraryDependencies += scalatest,
+    Test / parallelExecution := false,
     publish / skip := true
   )
 
@@ -262,61 +264,52 @@ lazy val sentences = project
   .settings(
     name := "profess-sentences",
     publish / skip := true,
-    Compile / unmanagedSources := {
-      val sources = (Compile / unmanagedSources).value
-      sources.filterNot { file =>
-        file.ext == "scala" && hasProfessDelimiter(IO.read(file))
-      }
-    },
     Compile / sourceGenerators += Def.task {
       val log = streams.value.log
-      val srcDir = (Compile / scalaSource).value
+      val dslSrcDir = baseDirectory.value / "src" / "main" / "profess"
       val outDir = (Compile / sourceManaged).value / "profess"
       val preprocessorJar = (preprocessor / Compile / packageBin).value.getAbsolutePath
       val preprocessorDeps = (preprocessor / Compile / dependencyClasspath).value.files.map(_.getAbsolutePath)
       val preprocessorScala = (preprocessor / scalaInstance).value.allJars.map(_.getAbsolutePath)
       val preprocessorCp = (preprocessorJar +: (preprocessorDeps ++ preprocessorScala).distinct)
         .mkString(java.io.File.pathSeparator)
-      val rawSources = (srcDir ** "*.scala").get
-      val enabledSources =
-        rawSources.filter(f => hasProfessDelimiter(IO.read(f)))
+      val rawSources =
+        if (dslSrcDir.exists) (dslSrcDir ** "*.profess").get
+        else Nil
 
-      enabledSources.map { inFile =>
-        val relPath = inFile.relativeTo(srcDir).get.getPath
-        val outFile = outDir / relPath
+      val filePairs = rawSources.map { inFile =>
+        val relPath = inFile.relativeTo(dslSrcDir).get.getPath
+        val scalaRelPath =
+          if (relPath.endsWith(".profess")) relPath.stripSuffix(".profess") + ".scala"
+          else relPath + ".scala"
+        val outFile = outDir / scalaRelPath
         IO.createDirectory(outFile.getParentFile)
+        (inFile, outFile)
+      }
+
+      if (filePairs.nonEmpty) {
         val cmd = Seq(
           "java",
           "-cp",
           preprocessorCp,
-          "profess.preprocessor.ProfessPreprocessorCli",
-          inFile.getAbsolutePath,
-          outFile.getAbsolutePath
-        )
+          "profess.preprocessor.ProfessPreprocessorCli"
+        ) ++ filePairs.flatMap { case (inFile, outFile) =>
+          Seq(inFile.getAbsolutePath, outFile.getAbsolutePath)
+        }
         val exitCode = Process(cmd, baseDirectory.value).!
         if (exitCode != 0) {
-          sys.error(s"Preprocessor CLI failed for ${inFile.getAbsolutePath}")
+          sys.error("Preprocessor CLI failed")
         } else {
-          log.debug(s"Preprocessed ${inFile.getName} -> ${outFile.getAbsolutePath}")
+          filePairs.foreach { case (inFile, outFile) =>
+            log.debug(s"Preprocessed ${inFile.getName} -> ${outFile.getAbsolutePath}")
+          }
         }
-        outFile
       }
+
+      filePairs.map(_._2)
     }.taskValue,
     preprocessorSelfTest := {
-      val preprocessorJar = (preprocessor / Compile / packageBin).value.getAbsolutePath
-      val preprocessorDeps = (preprocessor / Compile / dependencyClasspath).value.files.map(_.getAbsolutePath)
-      val preprocessorScala = (preprocessor / scalaInstance).value.allJars.map(_.getAbsolutePath)
-      val preprocessorCp = (preprocessorJar +: (preprocessorDeps ++ preprocessorScala).distinct)
-        .mkString(java.io.File.pathSeparator)
-      val cmd = Seq(
-        "java",
-        "-cp",
-        preprocessorCp,
-        "profess.preprocessor.ProfessPreprocessorCli",
-        "--self-test"
-      )
-      val exitCode = Process(cmd, baseDirectory.value).!
-      if (exitCode != 0) sys.error("Preprocessor self-test failed")
+      (preprocessor / Test / test).value
     },
     Compile / compile := (Compile / compile)
       .dependsOn(plugin / Compile / packageBin)

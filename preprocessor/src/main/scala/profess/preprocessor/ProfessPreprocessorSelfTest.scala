@@ -1,26 +1,10 @@
 package profess.preprocessor
 
 object ProfessPreprocessorSelfTest {
-  def run(log: String => Unit): Unit = {
-    def checkCase(name: String, input: String, expected: String): Unit = {
-      val actual = ProfessPreprocessorSupport.preprocessProfessSource(input)
-      if (actual != expected) {
-        val msg =
-          s"""Preprocessor case failed: $name
-             |--- Input ---
-             |$input
-             |--- Expected ---
-             |$expected
-             |--- Actual ---
-             |$actual
-             |""".stripMargin
-        throw new IllegalStateException(msg)
-      } else {
-        log(s"PASS: $name")
-      }
-    }
+  final case class TestCase(name: String, input: String, expected: String)
 
-    checkCase(
+  val cases: List[TestCase] = List(
+    TestCase(
       "unclosed marker is left unchanged",
       """|object X:
          |  val trade = @:- (broker Mark) sold 700 (stock MSFT) at 150:dollars
@@ -28,9 +12,8 @@ object ProfessPreprocessorSelfTest {
       """|object X:
          |  val trade = @:- (broker Mark) sold 700 (stock MSFT) at 150:dollars
          |""".stripMargin
-    )
-
-    checkCase(
+    ),
+    TestCase(
       "stray end marker is left unchanged",
       """|object X:
          |  val trade = (broker Mark) sold 700 (stock MSFT) at 150:dollars -:@
@@ -38,9 +21,8 @@ object ProfessPreprocessorSelfTest {
       """|object X:
          |  val trade = (broker Mark) sold 700 (stock MSFT) at 150:dollars -:@
          |""".stripMargin
-    )
-
-    checkCase(
+    ),
+    TestCase(
       "adjacent marker blocks rewrite independently",
       """|object X:
          |  val a = @:- (broker Mark) sold 1 (stock MSFT) at 1:dollars -:@
@@ -50,9 +32,8 @@ object ProfessPreprocessorSelfTest {
          |  val a = FESS("(broker Mark) sold 1 (stock MSFT) at 1:dollars")
          |  val b = FESS("(broker Jane) bought 2 (stock AAPL) at 2:dollars")
          |""".stripMargin
-    )
-
-    checkCase(
+    ),
+    TestCase(
       "marker tokens inside string are not rewritten",
       """|object X:
          |  val s = "marker @:- keep -:@ string"
@@ -60,9 +41,8 @@ object ProfessPreprocessorSelfTest {
       """|object X:
          |  val s = "marker @:- keep -:@ string"
          |""".stripMargin
-    )
-
-    checkCase(
+    ),
+    TestCase(
       "normal scala assignment remains unchanged",
       """|object X:
          |  val n = 1 + 2
@@ -70,9 +50,8 @@ object ProfessPreprocessorSelfTest {
       """|object X:
          |  val n = 1 + 2
          |""".stripMargin
-    )
-
-    checkCase(
+    ),
+    TestCase(
       "multiline marker escapes content safely",
       """|object X:
          |  val p = @:-
@@ -83,9 +62,8 @@ object ProfessPreprocessorSelfTest {
       """|object X:
          |  val p = FESS("(broker Mark) said \"hello\\\\path\"\n    then moved")
          |""".stripMargin
-    )
-
-    checkCase(
+    ),
+    TestCase(
       "mixed scala and non-delimited DSL stays unchanged",
       """|object X:
          |  val x = 42
@@ -97,9 +75,8 @@ object ProfessPreprocessorSelfTest {
          |  val t = (broker Mark) sold 700 (stock MSFT) at 150:dollars
          |  def inc(v: Int): Int = v + 1
          |""".stripMargin
-    )
-
-    checkCase(
+    ),
+    TestCase(
       "single-line delimited expression rewrites",
       """|object X:
          |  val t = @:- (broker Mark) sold 700 (stock MSFT) at 150:dollars -:@
@@ -108,5 +85,26 @@ object ProfessPreprocessorSelfTest {
          |  val t = FESS("(broker Mark) sold 700 (stock MSFT) at 150:dollars")
          |""".stripMargin
     )
+  )
+
+  def renderFailure(testCase: TestCase, actual: String): String =
+    s"""Preprocessor case failed: ${testCase.name}
+       |--- Input ---
+       |${testCase.input}
+       |--- Expected ---
+       |${testCase.expected}
+       |--- Actual ---
+       |$actual
+       |""".stripMargin
+
+  def run(log: String => Unit): Unit = {
+    cases.foreach { testCase =>
+      val actual = ProfessPreprocessorSupport.preprocessProfessSource(testCase.input)
+      if (actual != testCase.expected) {
+        throw new IllegalStateException(renderFailure(testCase, actual))
+      } else {
+        log(s"PASS: ${testCase.name}")
+      }
+    }
   }
 }

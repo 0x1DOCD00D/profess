@@ -36,7 +36,7 @@ class ProfessPhase(debug: Boolean, dumpAst: Boolean) extends PluginPhase:
       val containsFessCall = fessCallSites.nonEmpty
 
       if debug && containsFessCall then
-        report.echo(s"[PROFESS] FESS call sites for $fileName")
+        report.echo(s"[PROFESS] FESS call sites for $fileName (untyped, name-based match)")
         fessCallSites.foreach { site =>
           val owner = site.owner.getOrElse("<none>")
           report.echo(
