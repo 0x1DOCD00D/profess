@@ -24,6 +24,25 @@ object FessCallCollector:
     traverser.traverse(tree)
     traverser.result
 
+  def isFessFunction(tree: Tree): Boolean =
+    tree match
+      case Ident(name) =>
+        name.toString == "FESS"
+      case Select(_, name) =>
+        name.toString == "FESS"
+      case TypeApply(fun, _) =>
+        isFessFunction(fun)
+      case _ =>
+        false
+
+  def extractStringArgFromTree(treeOpt: Option[Tree]): Option[String] =
+    treeOpt.flatMap {
+      case Literal(Constant(value: String)) => Some(value)
+      case Typed(expr, _) => extractStringArgFromTree(Some(expr))
+      case NamedArg(_, expr) => extractStringArgFromTree(Some(expr))
+      case _ => None
+    }
+
   private final class Collector(using Context) extends UntypedTreeTraverser:
     private val ownerStack = mutable.ArrayBuffer.empty[String]
     private val sites = mutable.ListBuffer.empty[FessCallSite]
@@ -43,7 +62,7 @@ object FessCallCollector:
           }
 
         case applyTree @ Apply(fun, args) if isFessFunction(fun) =>
-          extractStringArg(args.headOption).foreach { text =>
+          extractStringArgFromTree(args.headOption).foreach { text =>
             sites += FessCallSite(
               owner = if ownerStack.nonEmpty then Some(ownerStack.mkString(".")) else None,
               sourceText = text,
@@ -63,25 +82,6 @@ object FessCallCollector:
     // Name-based matching is acceptable only at this untyped parser-phase stage.
     // It may over-match unrelated FESS identifiers until this collector is moved
     // to a typed/symbol-aware phase.
-    private def isFessFunction(tree: Tree): Boolean =
-      tree match
-        case Ident(name) =>
-          name.toString == "FESS"
-        case Select(_, name) =>
-          name.toString == "FESS"
-        case TypeApply(fun, _) =>
-          isFessFunction(fun)
-        case _ =>
-          false
-
-    private def extractStringArg(treeOpt: Option[Tree]): Option[String] =
-      treeOpt.flatMap {
-        case Literal(Constant(value: String)) => Some(value)
-        case Typed(expr, _) => extractStringArg(Some(expr))
-        case NamedArg(_, expr) => extractStringArg(Some(expr))
-        case _ => None
-      }
-
     private def sourcePoint(tree: Tree): SourcePoint =
       if tree.span.exists then
         val pos = ctx.source.atSpan(tree.span)

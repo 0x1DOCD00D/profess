@@ -58,6 +58,8 @@ class ProfessPhase(debug: Boolean, dumpAst: Boolean) extends PluginPhase:
       exprCollector.traverse(untypedTree)
       val candidates = exprCollector.result
 
+      var transformedTree = untypedTree
+
       if candidates.nonEmpty then
         // 3. Filter to only truly undeclared identifiers
         val toScaffold = candidates.filter { case (id, _) =>
@@ -81,10 +83,13 @@ class ProfessPhase(debug: Boolean, dumpAst: Boolean) extends PluginPhase:
           val scaffolding = ScaffoldGenerator.generate(toScaffold)
 
           // 5. Inject into AST
-          val transformed =
-            ASTInjector.inject(untypedTree, scaffolding, declared)
+          transformedTree =
+            ASTInjector.inject(transformedTree, scaffolding, declared)
 
-          unit.untpdTree = transformed
+      if containsFessCall then
+        transformedTree = FessIrLowering.rewrite(transformedTree)
+
+      unit.untpdTree = transformedTree
 
       if dumpAst && containsFessCall then
         report.echo(s"[PROFESS] AST after transform for $fileName")
