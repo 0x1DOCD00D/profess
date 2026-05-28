@@ -7,13 +7,17 @@ import dotty.tools.dotc.core.Decorators.*
 
 object FessIrLowering:
 
+  // Intermediate tokens produced by parseSentence before IR node construction.
+  // Pipeline: FESS("...") string → List[ParsedToken] → List[IRNode] → ProfessExpr(...)
   sealed trait ParsedToken
-  final case class ParsedObject(kind: String, name: String) extends ParsedToken
-  final case class ParsedWord(word: String) extends ParsedToken
-  final case class ParsedNumber(value: Double) extends ParsedToken
-  final case class ParsedUnit(value: Double, unit: String) extends ParsedToken
-  final case class ParsedString(value: String) extends ParsedToken
+  final case class ParsedObject(kind: String, name: String) extends ParsedToken  // (kind name)
+  final case class ParsedWord(word: String) extends ParsedToken                  // bare identifier
+  final case class ParsedNumber(value: Double) extends ParsedToken               // numeric literal
+  final case class ParsedUnit(value: Double, unit: String) extends ParsedToken   // number:unit e.g. 5:kg
+  final case class ParsedString(value: String) extends ParsedToken               // "quoted string"
 
+  // Entry point: walks the untyped Scala AST and rewrites every FESS("...") call site
+  // into a ProfessExpr(List(IRNode, ...)) constructor call, preserving the original span.
   def rewrite(tree: Tree)(using Context): Tree =
     object Rewriter extends UntypedTreeMap:
       override def transform(tree: Tree)(using Context): Tree =
@@ -23,7 +27,7 @@ object FessIrLowering:
               case Some(source) =>
                 parseSentence(source) match
                   case Right(tokens) => buildProfessExpr(tokens).withSpan(applyTree.span)
-                  case Left(_) => super.transform(tree)
+                  case Left(_) => super.transform(tree)  // leave malformed sentences unchanged
               case None =>
                 super.transform(tree)
           case _ =>
@@ -186,6 +190,7 @@ object FessIrLowering:
       case ParsedString(value) =>
         Apply(runtimeSelect("IRString"), List(stringLit(value)))
 
+  // Builds a fully-qualified reference to profess.runtime.<term> in the untyped AST.
   private def runtimeSelect(term: String)(using Context): Tree =
     Select(
       Select(

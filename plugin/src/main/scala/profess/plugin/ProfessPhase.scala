@@ -58,6 +58,8 @@ class ProfessPhase(debug: Boolean, dumpAst: Boolean) extends PluginPhase:
       exprCollector.traverse(untypedTree)
       val candidates = exprCollector.result
 
+      // Holds the full compilation unit AST as it passes through two optional transforms:
+      // scaffolding injection (for undeclared PROFESS identifiers) and FESS IR lowering.
       var transformedTree = untypedTree
 
       if candidates.nonEmpty then
