@@ -264,9 +264,10 @@ class ExpressionCollector(declared: Set[String])(using Context)
       name.head.isLower &&
       !ScalaKeywords.contains(name)
 
-  /** Check if this could be a PROFESS word */
+  /** Check if this could be a PROFESS word. PROFESS words must be lowercase. */
   private def isWordCandidate(name: String): Boolean =
     name.nonEmpty &&
+      name.head.isLower &&
       !commonScalaIds.contains(name) &&
       !name.startsWith("_")
 
