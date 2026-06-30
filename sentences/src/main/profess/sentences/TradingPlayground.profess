@@ -1,0 +1,75 @@
+package sentences
+
+import profess.runtime.*
+
+/**
+ * Trading desk — Domain 1 (the driving domain).
+ *
+ * Each sentence below mirrors, one-to-one, a statement from
+ * docs/domains/trading-expert-view.md. Object names follow desk convention:
+ * people lowercase (mark, sarah), tickers uppercase (AAPL, MSFT).
+ *
+ * The last group ("describe but don't move the book") is intentionally left
+ * for verbs/kinds an engineer has not written handlers for yet — hedged, rated,
+ * cancelled, option, analyst.
+ */
+object TradingPlayground:
+
+  // ── Trades that move the book ───────────────────────────────────────────
+  val bought: ProfessExpr =
+    @:- (broker mark) bought 300 (stock AAPL) at 180:dollars -:@
+  val sold: ProfessExpr =
+    @:- (broker mark) sold 700 (stock MSFT) at 150:dollars -:@
+  val boughtTsla: ProfessExpr =
+    @:- (broker sarah) bought 500 (stock TSLA) at 240:dollars -:@
+  val filledPartial: ProfessExpr =
+    @:- (broker mark) filled 400 (stock NVDA) at 905:dollars -:@
+
+  // ── Cash events ─────────────────────────────────────────────────────────
+  val dividend: ProfessExpr =
+    @:- (broker mark) received 1250:dollars dividend from (stock AAPL) -:@
+  val deposit: ProfessExpr =
+    @:- (client acme) deposited 50000:dollars into (account mark_book) -:@
+  val commission: ProfessExpr =
+    @:- (broker mark) charged 9.5:dollars commission on (stock AAPL) -:@
+
+  // ── Position movement ───────────────────────────────────────────────────
+  val transfer: ProfessExpr =
+    @:- (broker sarah) transferred 100 (stock TSLA) to (broker mark) -:@
+  val shorted: ProfessExpr =
+    @:- (broker mark) shorted 200 (stock NVDA) at 900:dollars on (exchange nasdaq) -:@
+  val covered: ProfessExpr =
+    @:- (broker mark) covered 200 (stock NVDA) at 880:dollars -:@
+
+  // ── Said, but not (yet) turned into numbers — no handlers expected ───────
+  val hedged: ProfessExpr =
+    @:- (broker mark) hedged (stock NVDA) with (option nvda_put) -:@
+  val rated: ProfessExpr =
+    @:- (analyst jin) rated (stock AAPL) as "overweight" -:@
+  val cancelled: ProfessExpr =
+    @:- (broker mark) cancelled (order o_msft_2) -:@
+
+
+@main def runTradingPlayground(): Unit =
+  println("Running PROFESS trading playground")
+  val examples = List(
+    "Bought"          -> TradingPlayground.bought.toIR,
+    "Sold"            -> TradingPlayground.sold.toIR,
+    "Bought TSLA"     -> TradingPlayground.boughtTsla.toIR,
+    "Filled Partial"  -> TradingPlayground.filledPartial.toIR,
+    "Dividend"        -> TradingPlayground.dividend.toIR,
+    "Deposit"         -> TradingPlayground.deposit.toIR,
+    "Commission"      -> TradingPlayground.commission.toIR,
+    "Transfer"        -> TradingPlayground.transfer.toIR,
+    "Shorted"         -> TradingPlayground.shorted.toIR,
+    "Covered"         -> TradingPlayground.covered.toIR,
+    "Hedged"          -> TradingPlayground.hedged.toIR,
+    "Rated"           -> TradingPlayground.rated.toIR,
+    "Cancelled"       -> TradingPlayground.cancelled.toIR
+  )
+
+  examples.foreach { (label, ir) =>
+    println(s"$label render: ${ir.render}")
+    println(s"$label tree:")
+    println(IRDebug.renderTree(ir))
+  }
