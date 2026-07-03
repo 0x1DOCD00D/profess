@@ -1,4 +1,4 @@
-package sentences
+package handlers
 
 import cats.Id
 import cats.Monoid
@@ -8,12 +8,9 @@ import profess.runtime.*
 /**
  * Healthcare DSL — DSL-AUTHOR territory (not framework).
  *
- * Ported from HandlerRegistry (flat traversal) to ClauseRegistry (structured
- * clause dispatch). Navigation changes from scanning the full flat node list to
- * reading named clause roles: subject / args / modifiers keyed by preposition.
- *
- * The framework (ClauseBuilder, ClauseRegistry, Monoid wiring) is untouched.
- * Mirrors docs/domains/healthcare-expert-view.md.
+ * Defines the state type (MedRecord/Chart), navigation helpers over Clause roles,
+ * and the ClauseRegistry that maps head relations to handler logic.
+ * Mirrors domain-specs/healthcare-expert-view.md.
  */
 
 /** A medication order — an intention. Fields are partial by nature. */
@@ -92,10 +89,7 @@ object HealthcareHandlers:
   val registry: ClauseRegistry[Id, Chart] =
     ClauseRegistry.empty[Id, Chart]
 
-      // (doctor chen) prescribed 500:mg of (drug amoxicillin) to (patient p_4821)
-      //   via (route oral) every 8:hours for 7:days
-      // subject=[doctor chen], args=[500:mg],
-      // modifiers: of[drug amox], to[patient p_4821], via[route oral], every[8:hours], for[7:days]
+      // drug in "of", patient in "to", route in "via", freq in "every", duration in "for"
       .onRelation("prescribed") { (clause, _, _) =>
         val patient = modKind(clause, "to", "patient")
         val drug    = modKind(clause, "of", "drug")
@@ -112,10 +106,7 @@ object HealthcareHandlers:
           case _ => Monoid[Chart].empty
       }
 
-      // (nurse alvarez) administered 500:mg of (drug amoxicillin) to (patient p_4821)
-      //   via (route oral) at 2:pm
-      // subject=[nurse alvarez], args=[500:mg],
-      // modifiers: of[drug amox], to[patient p_4821], via[route oral], at[2:pm]
+      // nurse is the subject; drug in "of", patient in "to", route in "via"
       .onRelation("administered") { (clause, _, _) =>
         val patient = modKind(clause, "to", "patient")
         val drug    = modKind(clause, "of", "drug")
@@ -126,8 +117,7 @@ object HealthcareHandlers:
           case _ => Monoid[Chart].empty
       }
 
-      // (nurse alvarez) held (drug amoxicillin) for (patient p_4821)
-      // subject=[nurse alvarez], args=[drug amox], modifier "for"=[patient p_4821]
+      // drug is a direct arg; patient is in the "for" modifier
       .onRelation("held") { (clause, _, _) =>
         val patient = modKind(clause, "for", "patient")
         val drug    = argKind(clause, "drug")
@@ -136,8 +126,7 @@ object HealthcareHandlers:
           case _                  => Monoid[Chart].empty
       }
 
-      // (patient p_4821) refused (drug morphine)
-      // subject=[patient p_4821], args=[drug morphine]
+      // patient is the subject; drug is a direct arg
       .onRelation("refused") { (clause, _, _) =>
         val patient = subjectKind(clause, "patient")
         val drug    = argKind(clause, "drug")
@@ -146,8 +135,7 @@ object HealthcareHandlers:
           case _                  => Monoid[Chart].empty
       }
 
-      // (doctor chen) discontinued (drug amoxicillin) for (patient p_4821)
-      // subject=[doctor chen], args=[drug amox], modifier "for"=[patient p_4821]
+      // drug is a direct arg; patient is in the "for" modifier
       .onRelation("discontinued") { (clause, _, _) =>
         val patient = modKind(clause, "for", "patient")
         val drug    = argKind(clause, "drug")
@@ -156,8 +144,7 @@ object HealthcareHandlers:
           case _                  => Monoid[Chart].empty
       }
 
-      // (doctor chen) recorded (allergy penicillin) for (patient p_4821)
-      // subject=[doctor chen], args=[allergy penicillin], modifier "for"=[patient p_4821]
+      // allergy is a direct arg; patient is in the "for" modifier
       .onRelation("recorded") { (clause, _, _) =>
         val patient = modKind(clause, "for", "patient")
         val allergy = argKind(clause, "allergy")
@@ -168,15 +155,15 @@ object HealthcareHandlers:
 
 
 @main def runHealthcareHandlers(): Unit =
-  import HealthcarePlayground.*
+  import sentences.HealthcarePlayground.*
 
-  val sentences = List(
+  val exprs = List(
     prescribedAmox, prescribedMorphine, gaveAmox1, gaveAmox2, gaveMorphine,
     held, refused, dispensed, allergy, discontinued, reported, titrated, noted
   )
 
   val (chart, misses) =
-    sentences.foldLeft((Monoid[Chart].empty, List.empty[String])) { case ((acc, ms), s) =>
+    exprs.foldLeft((Monoid[Chart].empty, List.empty[String])) { case ((acc, ms), s) =>
       val (result, miss) = HealthcareHandlers.registry.run(s.toIR)
       (Monoid[Chart].combine(acc, result), ms ++ miss.toList)
     }

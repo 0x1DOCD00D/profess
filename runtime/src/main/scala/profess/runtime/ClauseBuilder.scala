@@ -25,7 +25,7 @@ import cats.syntax.all.*
  */
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Structured clause types — professor's exact types
+// Structured clause types
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** A modifier phrase: one relation word and the fillers that follow it. */
@@ -74,7 +74,7 @@ object TransformContext:
     case single         => TransformContext(List(single))
 
 // ─────────────────────────────────────────────────────────────────────────────
-// RelationHandler — professor's exact trait
+// RelationHandler
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**

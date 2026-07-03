@@ -1,4 +1,4 @@
-package sentences
+package handlers
 
 import cats.Id
 import cats.Monoid
@@ -8,12 +8,9 @@ import profess.runtime.*
 /**
  * Trading DSL — DSL-AUTHOR territory (not framework).
  *
- * Ported from HandlerRegistry (flat traversal) to ClauseRegistry (structured
- * clause dispatch). Navigation changes from positional flat-list search to
- * named clause roles: subject / head / args / modifiers.
- *
- * The framework (ClauseBuilder, ClauseRegistry, Monoid wiring) is untouched.
- * Mirrors docs/domains/trading-expert-view.md.
+ * Defines the state type (Book/Desk), navigation helpers over Clause roles,
+ * and the ClauseRegistry that maps head relations to handler logic.
+ * Mirrors domain-specs/trading-expert-view.md.
  */
 
 /** A broker's book — the per-entity state that accumulates across sentences. */
@@ -61,9 +58,8 @@ object TradingHandlers:
 
   private def one(broker: String, book: Book): Desk = Map(broker -> book)
 
-  // ── a buy/sell-shaped trade ───────────────────────────────────────────────
-  // subject=[broker], head=verb, args=[qty, stock], modifier "at"=[price:dollars]
-
+  // buy/sell shape: subject is the broker, args carry qty and stock,
+  // "at" modifier carries the price. shareSign/cashSign flip for sells vs buys.
   private def trade(clause: Clause, shareSign: Double, cashSign: Double): Desk =
     (subjectBroker(clause), argStock(clause), argQty(clause)) match
       case (Some(b), Some(s), Some(q)) =>
@@ -82,8 +78,7 @@ object TradingHandlers:
       .onRelation("covered") ((clause, _, _) => trade(clause, +1.0, -1.0))
       .onRelation("sold")    ((clause, _, _) => trade(clause, -1.0, +1.0))
       .onRelation("shorted") ((clause, _, _) => trade(clause, -1.0, +1.0))
-      // (broker mark) received 1250:dollars dividend from (stock AAPL)
-      // subject=[broker mark], args=[1250:dollars], modifiers=[dividend[], from[stock AAPL]]
+      // amount is a direct arg; "dividend" and "from" are zero/one-filler modifiers
       .onRelation("received") { (clause, _, _) =>
         subjectBroker(clause) match
           case Some(b) =>
@@ -91,8 +86,7 @@ object TradingHandlers:
             one(b, Book(cash = amt, dividends = amt, log = List(s"$b received $amt dividend")))
           case None => Monoid[Desk].empty
       }
-      // (broker sarah) transferred 100 (stock TSLA) to (broker mark)
-      // subject=[broker sarah], args=[100, stock TSLA], modifier "to"=[broker mark]
+      // source broker is the subject; destination broker is in the "to" modifier
       .onRelation("transferred") { (clause, _, _) =>
         val src = subjectBroker(clause)
         val dst = modFillersOf(clause, "to").collectFirst { case IRObject("broker", n) => n }
@@ -107,15 +101,15 @@ object TradingHandlers:
 
 
 @main def runTradingHandlers(): Unit =
-  import TradingPlayground.*
+  import sentences.TradingPlayground.*
 
-  val sentences = List(
+  val exprs = List(
     bought, sold, boughtTsla, filledPartial, dividend, deposit, commission,
     transfer, shorted, covered, hedged, rated, cancelled
   )
 
   val (desk, misses) =
-    sentences.foldLeft((Monoid[Desk].empty, List.empty[String])) { case ((acc, ms), s) =>
+    exprs.foldLeft((Monoid[Desk].empty, List.empty[String])) { case ((acc, ms), s) =>
       val (result, miss) = TradingHandlers.registry.run(s.toIR)
       (Monoid[Desk].combine(acc, result), ms ++ miss.toList)
     }
