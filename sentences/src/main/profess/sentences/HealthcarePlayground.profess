@@ -1,0 +1,77 @@
+package sentences
+
+import profess.runtime.*
+
+/**
+ * Medication administration — Domain 2 (the pressure-test domain).
+ *
+ * Each sentence below mirrors, one-to-one, a statement from
+ * docs/domains/healthcare-expert-view.md. Patients are identified by chart
+ * number only (p_4821), never by name.
+ *
+ * The last group ("said, but doesn't fit the formal record") is intentionally
+ * left for verbs/kinds an engineer has not written handlers for yet — titrated,
+ * reported, noted, symptom. This domain is chosen to make that path common.
+ */
+object HealthcarePlayground:
+
+  // ── Orders (an intention) ─────────────────────────────────────────────────
+  val prescribedAmox: ProfessExpr =
+    @:- (doctor chen) prescribed 500:mg of (drug amoxicillin) to (patient p_4821) via (route oral) every 8:hours for 7:days -:@
+  val prescribedMorphine: ProfessExpr =
+    @:- (doctor chen) prescribed 10:mg of (drug morphine) to (patient p_4821) every 4:hours as needed for pain -:@
+
+  // ── Administrations (what actually happened) ──────────────────────────────
+  val gaveAmox1: ProfessExpr =
+    @:- (nurse alvarez) administered 500:mg of (drug amoxicillin) to (patient p_4821) via (route oral) at 2:pm -:@
+  val gaveAmox2: ProfessExpr =
+    @:- (nurse alvarez) administered 500:mg of (drug amoxicillin) to (patient p_4821) via (route oral) at 10:pm -:@
+  val gaveMorphine: ProfessExpr =
+    @:- (nurse osei) administered 10:mg of (drug morphine) to (patient p_4821) via (route iv) -:@
+
+  // ── Gaps in dosing, explained ─────────────────────────────────────────────
+  val held: ProfessExpr =
+    @:- (nurse alvarez) held (drug amoxicillin) for (patient p_4821) -:@
+  val refused: ProfessExpr =
+    @:- (patient p_4821) refused (drug morphine) -:@
+
+  // ── Pharmacy, allergies, stopping an order ────────────────────────────────
+  val dispensed: ProfessExpr =
+    @:- (pharmacist lee) dispensed 14 (drug amoxicillin) to (ward 3west) -:@
+  val allergy: ProfessExpr =
+    @:- (doctor chen) recorded (allergy penicillin) for (patient p_4821) -:@
+  val discontinued: ProfessExpr =
+    @:- (doctor chen) discontinued (drug amoxicillin) for (patient p_4821) -:@
+
+  // ── Said, but doesn't fit the formal record — no handlers expected ────────
+  val reported: ProfessExpr =
+    @:- (patient p_4821) reported (symptom nausea) -:@
+  val titrated: ProfessExpr =
+    @:- (doctor chen) titrated (drug morphine) for (patient p_4821) -:@
+  val noted: ProfessExpr =
+    @:- (nurse alvarez) noted "patient resting comfortably" -:@
+
+
+@main def runHealthcarePlayground(): Unit =
+  println("Running PROFESS healthcare playground")
+  val examples = List(
+    "Prescribed Amox"     -> HealthcarePlayground.prescribedAmox.toIR,
+    "Prescribed Morphine" -> HealthcarePlayground.prescribedMorphine.toIR,
+    "Gave Amox 1"         -> HealthcarePlayground.gaveAmox1.toIR,
+    "Gave Amox 2"         -> HealthcarePlayground.gaveAmox2.toIR,
+    "Gave Morphine"       -> HealthcarePlayground.gaveMorphine.toIR,
+    "Held"                -> HealthcarePlayground.held.toIR,
+    "Refused"             -> HealthcarePlayground.refused.toIR,
+    "Dispensed"           -> HealthcarePlayground.dispensed.toIR,
+    "Allergy"             -> HealthcarePlayground.allergy.toIR,
+    "Discontinued"        -> HealthcarePlayground.discontinued.toIR,
+    "Reported"            -> HealthcarePlayground.reported.toIR,
+    "Titrated"            -> HealthcarePlayground.titrated.toIR,
+    "Noted"               -> HealthcarePlayground.noted.toIR
+  )
+
+  examples.foreach { (label, ir) =>
+    println(s"$label render: ${ir.render}")
+    println(s"$label tree:")
+    println(IRDebug.renderTree(ir))
+  }
